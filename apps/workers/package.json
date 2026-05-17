@@ -1,0 +1,26 @@
+{
+  "name": "@orderflow/workers",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Node.js background workers for OrderFlow Analytics",
+  "scripts": {
+    "notification-dispatcher": "tsx notification-dispatcher.ts",
+    "daily-recap": "tsx daily-recap.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.35.0",
+    "@orderflow/llm-prompts": "workspace:*",
+    "@orderflow/types": "workspace:*",
+    "@prisma/client": "^5.22.0",
+    "ioredis": "^5.4.1",
+    "resend": "^4.0.0",
+    "web-push": "^3.6.7"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "@types/web-push": "^3.6.3",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0"
+  }
+}

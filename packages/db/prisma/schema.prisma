@@ -1,0 +1,226 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserTier {
+  free
+  premium
+}
+
+enum UserStatus {
+  pending_verification
+  active
+  suspended
+}
+
+enum SignalStatus {
+  armed
+  paused
+  archived
+}
+
+enum NotificationKind {
+  email
+  browser_push
+  telegram
+  webhook
+}
+
+enum ScanScope {
+  single_market
+  cross_market
+}
+
+model User {
+  id            String    @id @default(cuid())
+  username      String    @unique
+  email         String    @unique
+  passwordHash  String    @map("password_hash")
+  tier          UserTier  @default(free)
+  status        UserStatus @default(pending_verification)
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  subscription         Subscription?
+  tokenLedger          TokenLedger?
+  llmCalls             LlmCall[]
+  signalSetups         SignalSetup[]
+  signalEvents         SignalEvent[]
+  scans                Scan[]
+  watchlists           Watchlist[]
+  notificationChannels NotificationChannel[]
+  aiUsageDaily         AiUsageDaily[]
+
+  @@map("users")
+}
+
+model Subscription {
+  id                   String   @id @default(cuid())
+  userId               String   @unique @map("user_id")
+  stripeSubscriptionId String   @unique @map("stripe_subscription_id")
+  stripeCustomerId     String   @map("stripe_customer_id")
+  status               String
+  currentPeriodEnd     DateTime @map("current_period_end")
+  createdAt            DateTime @default(now()) @map("created_at")
+  updatedAt            DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("subscriptions")
+}
+
+// Single row per user; balance in cents (100 = $1.00)
+model TokenLedger {
+  userId      String   @id @map("user_id")
+  balanceCents Int     @default(0) @map("balance_cents")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("token_ledger")
+}
+
+model LlmCall {
+  id                      String   @id @default(cuid())
+  userId                  String   @map("user_id")
+  feature                 String
+  model                   String
+  inputTokens             Int      @map("input_tokens")
+  outputTokens            Int      @map("output_tokens")
+  cacheCreationInputTokens Int     @default(0) @map("cache_creation_input_tokens")
+  cacheReadInputTokens    Int      @default(0) @map("cache_read_input_tokens")
+  costCents               Int      @map("cost_cents")
+  batched                 Boolean  @default(false)
+  createdAt               DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([feature, createdAt])
+  @@map("llm_calls")
+}
+
+// Daily AI call quota tracker (also enforced via Redis for speed)
+model AiUsageDaily {
+  id        String   @id @default(cuid())
+  userId    String   @map("user_id")
+  date      DateTime @db.Date
+  callCount Int      @default(0) @map("call_count")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, date])
+  @@map("ai_usage_daily")
+}
+
+model SignalSetup {
+  id                   String      @id @default(cuid())
+  userId               String      @map("user_id")
+  name                 String
+  market               String      // crypto | stocks | futures | forex | commodities | resources
+  triggerConfig        Json        @map("trigger_config")
+  instruments          String[]
+  notificationChannels String[]    @map("notification_channels")
+  cooldownMinutes      Int         @default(15) @map("cooldown_minutes")
+  activeHours          Json        @default("{}") @map("active_hours") // { start: "09:30", end: "16:00", tz: "America/New_York" } | {}
+  status               SignalStatus @default(armed)
+  createdAt            DateTime    @default(now()) @map("created_at")
+  updatedAt            DateTime    @updatedAt @map("updated_at")
+
+  user   User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  events SignalEvent[]
+
+  @@index([userId, status])
+  @@map("signal_setups")
+}
+
+model SignalEvent {
+  id            String   @id @default(cuid())
+  setupId       String   @map("setup_id")
+  userId        String   @map("user_id")
+  instrument    String
+  snapshot      Json
+  aiExplanation String?  @map("ai_explanation")
+  aiModel       String?  @map("ai_model")
+  aiCostCents   Int?     @map("ai_cost_cents")
+  notifiedAt    DateTime? @map("notified_at")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  setup SignalSetup @relation(fields: [setupId], references: [id], onDelete: Cascade)
+  user  User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([setupId, createdAt])
+  @@map("signal_events")
+}
+
+// TimescaleDB hypertable — partitioned on created_at
+model Scan {
+  id           String    @id @default(cuid())
+  userId       String    @map("user_id")
+  scope        ScanScope
+  filterConfig Json      @map("filter_config")
+  results      Json      @default("[]")
+  market       String?
+  createdAt    DateTime  @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@map("scans")
+}
+
+model Watchlist {
+  id          String   @id @default(cuid())
+  userId      String   @map("user_id")
+  name        String
+  instruments String[]
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("watchlists")
+}
+
+model NotificationChannel {
+  id        String           @id @default(cuid())
+  userId    String           @map("user_id")
+  kind      NotificationKind
+  config    Json             // { endpoint, keys } for push; { chatId } for telegram; { url, secret } for webhook
+  verified  Boolean          @default(false)
+  createdAt DateTime         @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, kind])
+  @@map("notification_channels")
+}
+
+model DailyRecap {
+  id          String   @id @default(cuid())
+  userId      String   @map("user_id")
+  content     String
+  model       String
+  costCents   Int      @map("cost_cents")
+  deliveredAt DateTime? @map("delivered_at")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@index([userId, createdAt])
+  @@map("daily_recaps")
+}
+
+// Tracks processed Stripe event IDs to prevent duplicate webhook handling.
+model StripeEvent {
+  id          String   @id @default(cuid())
+  stripeId    String   @unique @map("stripe_id")
+  type        String
+  processedAt DateTime @default(now()) @map("processed_at")
+
+  @@map("stripe_events")
+}
