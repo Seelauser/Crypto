@@ -214,7 +214,7 @@ export function useMarketSocket(
   const instrumentsKey = instruments.join(',');
 
   useEffect(() => {
-    const listener = () => forceUpdate(n => n + 1);
+    const listener = () => forceUpdate((n: number) => n + 1);
     wsState.stateListeners.add(listener);
 
     // Ensure base market channels + per-instrument channels are subscribed
@@ -292,7 +292,7 @@ export function useCvdStream(instrument: string): CvdPoint[] {
     }
 
     const listener: CvdListener = (point) => {
-      setPoints(prev => {
+      setPoints((prev: CvdPoint[]) => {
         const next = [...prev, point];
         if (next.length > MAX_CVD_POINTS) {
           return next.slice(next.length - MAX_CVD_POINTS);

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo, useEffect, useRef } from 'react';
+import { useState, useMemo, useEffect, useRef, type RefObject } from 'react';
 import Link from 'next/link';
 import CvdChart from '@/components/charts/CvdChart';
 import OrderBookHeatmap from '@/components/charts/OrderBookHeatmap';
@@ -649,7 +649,7 @@ function ChartPaneAutoHeight({
 }: {
   instrument: string;
   tier: 'free' | 'premium';
-  containerRef: React.RefObject<HTMLDivElement | null>;
+  containerRef: RefObject<HTMLDivElement | null>;
 }) {
   const [chartHeight, setChartHeight] = useState(420);
 
