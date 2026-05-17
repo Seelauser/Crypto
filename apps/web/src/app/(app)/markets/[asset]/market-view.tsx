@@ -5,8 +5,13 @@ import Link from 'next/link';
 import CvdChart from '@/components/charts/CvdChart';
 import OrderBookHeatmap from '@/components/charts/OrderBookHeatmap';
 import TapePanel from '@/components/charts/TapePanel';
+import TapeNarrator from '@/components/charts/TapeNarrator';
+import DeepAnalysisPanel from '@/components/charts/DeepAnalysisPanel';
+import CorrelationPanel from '@/components/charts/CorrelationPanel';
 import { useMarketSocket, useInstrumentTick } from '@/lib/ws';
 import type { AssetClass } from '@orderflow/types';
+
+type BottomPanel = 'tape' | 'tape_ai' | 'deep_analysis' | 'correlation';
 
 // ─── Instrument lists per asset class ────────────────────────────────────────
 
@@ -312,7 +317,8 @@ export default function MarketView({ asset, tier }: Props) {
   const instruments = INSTRUMENTS[asset] ?? INSTRUMENTS.crypto;
 
   const [selectedInstrument, setSelectedInstrument] = useState<string>(instruments[0]);
-  const [searchQuery, setSearchQuery] = useState('');
+  const [searchQuery,        setSearchQuery]        = useState('');
+  const [bottomPanel,        setBottomPanel]        = useState<BottomPanel>('tape');
 
   // Connect to WebSocket for all instruments + market channels
   const { connected } = useMarketSocket(instruments, ['market:ticks', 'market:cvd_update', 'market:orderbook']);
@@ -608,19 +614,97 @@ export default function MarketView({ asset, tier }: Props) {
             />
           </div>
 
-          {/* Tape panel — fixed 240px at bottom */}
+          {/* ── Bottom panel: tab bar + selected panel ─────────────────── */}
           <div
             style={{
-              height: 240,
-              flexShrink: 0,
-              borderTop: '1px solid #1f2128',
-              overflow: 'hidden',
+              flexShrink:    0,
+              borderTop:    '1px solid #1f2128',
+              display:      'flex',
+              flexDirection: 'column',
+              overflow:     'hidden',
             }}
           >
-            <TapePanel
-              instrument={selectedInstrument}
-              tier={tier}
-            />
+            {/* Tab bar */}
+            <div
+              style={{
+                display:      'flex',
+                alignItems:   'center',
+                gap:           4,
+                padding:      '4px 10px',
+                borderBottom: '1px solid #1f2128',
+                background:   '#0d0e12',
+                flexShrink:    0,
+              }}
+            >
+              {(
+                [
+                  { id: 'tape',          label: 'Tape' },
+                  { id: 'tape_ai',       label: 'Tape AI' },
+                  { id: 'deep_analysis', label: 'Deep Analysis', pro: true },
+                  { id: 'correlation',   label: 'Correlation' },
+                ] as Array<{ id: BottomPanel; label: string; pro?: boolean }>
+              ).map(tab => (
+                <button
+                  key={tab.id}
+                  onClick={() => setBottomPanel(tab.id)}
+                  style={{
+                    padding:       '3px 10px',
+                    borderRadius:   4,
+                    fontSize:       10,
+                    fontFamily:    'JetBrains Mono, monospace',
+                    fontWeight:     bottomPanel === tab.id ? 700 : 400,
+                    color:          bottomPanel === tab.id ? '#22d3ee' : '#5a5f6a',
+                    background:     bottomPanel === tab.id ? '#22d3ee12' : 'transparent',
+                    border:        `1px solid ${bottomPanel === tab.id ? '#22d3ee30' : 'transparent'}`,
+                    cursor:        'pointer',
+                    letterSpacing: '0.04em',
+                    whiteSpace:    'nowrap',
+                    display:       'flex',
+                    alignItems:    'center',
+                    gap:            4,
+                  }}
+                >
+                  {tab.label}
+                  {tab.pro && tier !== 'premium' && (
+                    <span style={{ fontSize: 8, color: '#fbbf24' }}>PRO</span>
+                  )}
+                </button>
+              ))}
+            </div>
+
+            {/* Panel body */}
+            <div
+              style={{
+                height:   bottomPanel === 'deep_analysis' ? 360 : 240,
+                overflow: 'hidden',
+                transition: 'height 200ms ease',
+              }}
+            >
+              {bottomPanel === 'tape' && (
+                <TapePanel instrument={selectedInstrument} tier={tier} />
+              )}
+
+              {bottomPanel === 'tape_ai' && (
+                <div style={{ padding: '10px 12px', height: '100%', boxSizing: 'border-box' }}>
+                  <TapeNarrator instrument={selectedInstrument} tier={tier} />
+                </div>
+              )}
+
+              {bottomPanel === 'deep_analysis' && (
+                <DeepAnalysisPanel instrument={selectedInstrument} tier={tier} />
+              )}
+
+              {bottomPanel === 'correlation' && (
+                <div style={{ padding: '10px 12px', height: '100%', overflowY: 'auto', boxSizing: 'border-box' }}>
+                  <CorrelationPanel
+                    defaultInstrumentA={instruments[0]}
+                    defaultInstrumentB={instruments[1] ?? instruments[0]}
+                    availableInstruments={instruments}
+                    tier={tier}
+                  />
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </div>
