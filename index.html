@@ -1,0 +1,566 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>OrderFlow Analytics — Live Demo</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet"/>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0a0a0b;--bg2:#0d0e12;--bg3:#13141a;--bg4:#1a1c23;
+  --border:#1f2128;--border2:#2a2d36;
+  --text:#e6e8ee;--text2:#8a8f9b;--text3:#5a5f6a;
+  --buy:#22d3ee;--sell:#f97366;--warn:#fbbf24;--ok:#22c55e;
+  --mono:'JetBrains Mono',monospace;
+}
+html,body{height:100%;background:var(--bg);color:var(--text);font-family:'Inter',sans-serif;font-size:14px;overflow:hidden}
+button{cursor:pointer;font-family:inherit}
+
+/* ── Layout ─────────────────────────────────────────────────────── */
+#app{display:flex;flex-direction:column;height:100vh}
+#topbar{display:flex;align-items:center;gap:10px;padding:8px 14px;border-bottom:1px solid var(--border);background:var(--bg2);flex-shrink:0;flex-wrap:wrap}
+#main{display:flex;flex:1;overflow:hidden;min-height:0}
+#sidebar{width:240px;flex-shrink:0;display:flex;flex-direction:column;border-right:1px solid var(--border);overflow:hidden}
+#center{flex:1;display:flex;flex-direction:column;overflow:hidden;min-width:0}
+#chartpane{flex:1;overflow:hidden;position:relative;min-height:0}
+#bottompane{flex-shrink:0;border-top:1px solid var(--border);display:flex;flex-direction:column}
+#tabbar{display:flex;gap:4px;padding:5px 10px;border-bottom:1px solid var(--border);background:var(--bg2);flex-shrink:0}
+#panelbody{height:200px;overflow:hidden}
+
+/* ── Top bar tabs ───────────────────────────────────────────────── */
+.assettab{padding:4px 12px;border-radius:5px;font-family:var(--mono);font-size:11px;border:1px solid transparent;background:transparent;color:var(--text2);transition:all 120ms}
+.assettab.active{color:var(--buy);background:rgba(34,211,238,.07);border-color:rgba(34,211,238,.2);font-weight:700}
+.wsbadge{display:flex;align-items:center;gap:5px;padding:3px 8px;border-radius:4px;background:rgba(34,197,94,.06);border:1px solid rgba(34,197,94,.25);font-family:var(--mono);font-size:10px;color:var(--ok)}
+.wsdot{width:6px;height:6px;border-radius:50%;background:var(--ok);box-shadow:0 0 5px rgba(34,197,94,.6)}
+.tierbadge{font-family:var(--mono);font-size:10px;padding:3px 8px;border-radius:4px;border:1px solid rgba(251,191,36,.3);background:rgba(251,191,36,.08);color:var(--warn);letter-spacing:.06em}
+.demobanner{font-family:var(--mono);font-size:9px;padding:3px 10px;border-radius:4px;background:rgba(251,191,36,.08);border:1px solid rgba(251,191,36,.2);color:var(--warn);letter-spacing:.04em}
+
+/* ── Sidebar ────────────────────────────────────────────────────── */
+#sidehead{padding:6px 10px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;background:var(--bg2);flex-shrink:0}
+#instlist{flex:1;overflow-y:auto;scrollbar-width:thin;scrollbar-color:var(--border2) transparent}
+.instrow{display:grid;grid-template-columns:1fr auto;gap:2px 8px;padding:9px 10px;border-bottom:1px solid var(--bg3);cursor:pointer;transition:background 100ms;border-left:2px solid transparent}
+.instrow:hover{background:rgba(255,255,255,.02)}
+.instrow.sel{background:rgba(34,211,238,.04);border-left-color:var(--buy)}
+.instsym{font-family:var(--mono);font-size:12px;font-weight:600;color:var(--text2);display:flex;align-items:center;gap:5px}
+.instrow.sel .instsym{color:var(--text)}
+.instprice{font-family:var(--mono);font-size:12px;font-weight:600;text-align:right}
+.instchg{font-family:var(--mono);font-size:10px;text-align:right}
+.imbar{grid-column:1/-1;height:2px;background:var(--border);border-radius:1px;overflow:hidden;margin-top:3px}
+.imfill{height:100%;border-radius:1px;transition:width 300ms}
+
+/* ── Heatmap stub ───────────────────────────────────────────────── */
+#heatmap{flex-shrink:0;height:130px;border-top:1px solid var(--border);background:var(--bg3);position:relative;overflow:hidden}
+#heatmaplabel{position:absolute;top:6px;left:8px;font-family:var(--mono);font-size:9px;color:var(--text3);letter-spacing:.06em}
+
+/* ── Chart ──────────────────────────────────────────────────────── */
+#chartcanvas{display:block;width:100%;height:100%}
+#chartlabel{position:absolute;top:8px;left:12px;font-family:var(--mono);font-size:10px;color:var(--text3);letter-spacing:.04em;display:flex;align-items:center;gap:8px}
+#cvdval{font-size:15px;font-weight:700;font-family:var(--mono)}
+#chartbadge{font-size:9px;padding:2px 6px;border-radius:3px;background:rgba(34,211,238,.08);border:1px solid rgba(34,211,238,.2);color:var(--buy);letter-spacing:.04em}
+
+/* ── Bottom tabs ────────────────────────────────────────────────── */
+.btab{padding:3px 11px;border-radius:4px;font-family:var(--mono);font-size:10px;border:1px solid transparent;background:transparent;color:var(--text3);transition:all 100ms;letter-spacing:.04em}
+.btab.active{color:var(--buy);background:rgba(34,211,238,.08);border-color:rgba(34,211,238,.2);font-weight:700}
+.probadge{font-size:8px;color:var(--warn);margin-left:3px}
+
+/* ── Tape panel ─────────────────────────────────────────────────── */
+#tapepanel{height:100%;overflow-y:auto;scrollbar-width:thin;scrollbar-color:var(--border) transparent}
+.tapehead{padding:5px 12px;border-bottom:1px solid var(--border);background:var(--bg2);display:flex;justify-content:space-between;align-items:center;font-family:var(--mono);font-size:9px;color:var(--text3);letter-spacing:.06em;flex-shrink:0}
+.taperow{display:grid;grid-template-columns:70px 90px 1fr 60px 60px;gap:0;padding:4px 12px;border-bottom:1px solid rgba(31,33,40,.6);font-family:var(--mono);font-size:11px;animation:fadein .3s ease}
+@keyframes fadein{from{opacity:0;transform:translateY(-3px)}to{opacity:1;transform:none}}
+
+/* ── AI panels ──────────────────────────────────────────────────── */
+.aipanel{padding:12px 14px;height:100%;overflow-y:auto;display:flex;flex-direction:column;gap:10px}
+.aicard{background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:12px 14px}
+.aicard h4{font-family:var(--mono);font-size:11px;color:var(--text);margin-bottom:6px;letter-spacing:.04em}
+.aicard p{font-size:12px;color:#c9d1d9;line-height:1.65}
+.modelbadge{display:inline-flex;align-items:center;font-family:var(--mono);font-size:9px;background:#1a1f2e;color:#60a5fa;padding:2px 7px;border-radius:10px;border:1px solid #1e3a5f;letter-spacing:.04em}
+.corr-num{font-family:var(--mono);font-size:28px;font-weight:700;line-height:1}
+.corr-bar{height:4px;background:var(--border);border-radius:2px;overflow:hidden;margin:6px 0}
+.corr-fill{height:100%;border-radius:2px;transition:width 500ms ease}
+
+/* ── Pro blur gate ──────────────────────────────────────────────── */
+.gate{position:relative;flex:1;overflow:hidden}
+.blurred{filter:blur(5px);user-select:none;pointer-events:none;padding:14px;font-family:var(--mono);font-size:12px;color:var(--text3);line-height:1.7}
+.gateoverlay{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;background:rgba(10,10,11,.5);backdrop-filter:blur(2px)}
+.gatebox{background:var(--bg3);border:1px solid var(--border2);border-radius:10px;padding:20px 24px;text-align:center;max-width:300px}
+.gatebox h3{font-size:16px;color:var(--warn);margin-bottom:8px}
+.gatebox p{font-size:12px;color:var(--text2);line-height:1.5;margin-bottom:14px}
+.upgradebtn{display:inline-block;padding:8px 20px;background:var(--buy);color:var(--bg);border-radius:6px;font-size:12px;font-weight:700;font-family:var(--mono);text-decoration:none;letter-spacing:.04em}
+</style>
+</head>
+<body>
+<div id="app">
+
+<!-- ── Top bar ─────────────────────────────────────────────────────── -->
+<div id="topbar">
+  <div style="display:flex;gap:4px;flex-wrap:wrap" id="assettabs"></div>
+  <div style="width:1px;height:20px;background:var(--border)"></div>
+  <input id="search" type="text" placeholder="Search…" style="background:var(--bg3);border:1px solid var(--border2);border-radius:5px;padding:4px 10px 4px 28px;font-size:11px;font-family:var(--mono);color:var(--text);outline:none;width:140px"/>
+  <div style="flex:1"></div>
+  <span id="selinst" style="font-family:var(--mono);font-size:12px;font-weight:700;padding:3px 8px;border:1px solid rgba(34,211,238,.25);border-radius:4px;background:rgba(34,211,238,.06)"></span>
+  <div class="wsbadge"><div class="wsdot"></div>WS: live</div>
+  <div class="tierbadge">PRO</div>
+  <div class="demobanner">⚡ DEMO — mock data</div>
+</div>
+
+<!-- ── Main ────────────────────────────────────────────────────────── -->
+<div id="main">
+
+  <!-- Sidebar -->
+  <div id="sidebar">
+    <div id="sidehead">
+      <span style="font-family:var(--mono);font-size:10px;color:var(--text3);letter-spacing:.08em;text-transform:uppercase" id="assetlabel">Crypto</span>
+      <span style="font-family:var(--mono);font-size:10px;background:var(--border);color:var(--text3);padding:1px 6px;border-radius:10px" id="instcount">6</span>
+    </div>
+    <div id="instlist"></div>
+    <div id="heatmap">
+      <span id="heatmaplabel">ORDER BOOK HEATMAP</span>
+      <canvas id="heatcanvas" style="width:100%;height:100%;display:block"></canvas>
+    </div>
+  </div>
+
+  <!-- Center -->
+  <div id="center">
+    <div id="chartpane">
+      <canvas id="chartcanvas"></canvas>
+      <div id="chartlabel">
+        <span style="color:var(--text2);letter-spacing:.04em">CVD</span>
+        <span id="cvdval"></span>
+        <span id="chartbadge">True L2</span>
+        <span style="font-size:9px;color:var(--text3)">1h</span>
+      </div>
+    </div>
+    <div id="bottompane">
+      <div id="tabbar">
+        <button class="btab active" data-panel="tape">Tape</button>
+        <button class="btab" data-panel="tape_ai">Tape AI</button>
+        <button class="btab" data-panel="deep">Deep Analysis <span class="probadge">PRO</span></button>
+        <button class="btab" data-panel="corr">Correlation</button>
+      </div>
+      <div id="panelbody"></div>
+    </div>
+  </div>
+
+</div>
+</div>
+
+<script>
+// ── Data ──────────────────────────────────────────────────────────────────────
+
+const ASSETS = {
+  crypto:      { label:'Crypto', instruments:['BTCUSDT','ETHUSDT','SOLUSDT','BNBUSDT','XRPUSDT','DOGEUSDT'], l2:true },
+  stocks:      { label:'Stocks', instruments:['AAPL','NVDA','TSLA','MSFT','AMZN','META'], l2:false },
+  futures:     { label:'Futures', instruments:['ES','NQ','RTY','YM','CL','GC'], l2:false },
+  forex:       { label:'Forex', instruments:['EURUSD','GBPUSD','USDJPY','USDCHF','AUDUSD','USDCAD'], l2:false },
+  commodities: { label:'Commodities', instruments:['GC','SI','CL','NG','ZC','ZW'], l2:false },
+  resources:   { label:'Resources', instruments:['VALE','RIO','BHP','FCX','AA','NEM'], l2:false },
+};
+
+const BASE_PRICES = {
+  BTCUSDT:68420,ETHUSDT:3812,SOLUSDT:182,BNBUSDT:412,XRPUSDT:0.58,DOGEUSDT:0.14,
+  AAPL:194,NVDA:875,TSLA:175,MSFT:415,AMZN:186,META:520,
+  ES:5310,NQ:18620,RTY:2080,YM:39240,CL:78,GC:2345,
+  EURUSD:1.085,GBPUSD:1.265,USDJPY:154.8,USDCHF:0.905,AUDUSD:0.648,USDCAD:1.362,
+  SI:27.4,NG:2.1,ZC:445,ZW:558,
+  VALE:14.2,RIO:68.4,BHP:54.1,FCX:42.8,AA:32.6,NEM:38.9,
+};
+
+const TAPE_NARRATION = {
+  BTCUSDT:"Tape is showing aggressive buy-side absorption at 68,400 — three consecutive large prints averaging 15 BTC apiece. CVD momentum is accelerating; sellers are losing ground fast.",
+  ETHUSDT:"Mixed tape at the figure. ETH seeing alternating 8–12 ETH clips, bid-dominant imbalance 1.8×. Short-term bias tilts long while price holds above 3,800.",
+  default:"Balanced tape at current levels. Order flow is two-sided, no clear directional bias from large prints. Watch for a surge in delta to confirm directional intent.",
+};
+
+const DEEP_ANALYSIS = {
+  BTCUSDT:`**A) Structure**\nVPOC at 68,200 is the dominant control level. VAH 68,900 / VAL 67,600 define the session value area. HVN cluster at 68,100–68,300 acts as a magnetic zone. LVN at 68,750–68,900 is a fast-move corridor on a breakout attempt.\n\n**B) Order Flow Narrative**\nBuyers are in control: CVD rising +14.2K net over the session, imbalance ratio 1.58× bid-dominant. Delta has been consistently positive on up-closes, suggesting genuine accumulation rather than short covering. Large prints >10 BTC consistently hitting the bid side.\n\n**C) Forward-Looking**\nBullish confirmation: reclaim and hold above VAH 68,900 on above-average volume with CVD >+18K. Bearish confirmation: sustained break below VPOC 68,200 with CVD turning negative.\n\n**D) Risk**\nThesis invalidation: 15-minute close below VAL 67,600 on >150K volume. Logical stop beneath 67,400. Not investment advice.`,
+};
+
+const CORR_DATA = {
+  'BTCUSDT:ETHUSDT': { r:0.847, label:'Strong', color:'#22c55e' },
+  'BTCUSDT:SOLUSDT': { r:0.712, label:'Strong', color:'#22c55e' },
+  'BTCUSDT:BNBUSDT': { r:0.634, label:'Moderate', color:'#fbbf24' },
+  'ETHUSDT:SOLUSDT': { r:0.781, label:'Strong', color:'#22c55e' },
+  default:           { r:0.418, label:'Moderate', color:'#fbbf24' },
+};
+
+// ── State ─────────────────────────────────────────────────────────────────────
+
+let activeAsset = 'crypto';
+let activeInst  = 'BTCUSDT';
+let activePanel = 'tape';
+let prices      = {...BASE_PRICES};
+let cvdSeries   = [];
+let tapeRows    = [];
+
+// ── Seeded RNG ────────────────────────────────────────────────────────────────
+
+function rng(seed){
+  let h=0;for(let i=0;i<seed.length;i++)h=Math.imul(31,h)+seed.charCodeAt(i);
+  let s=h>>>0;
+  return()=>{
+    s+=0x6d2b79f5;let t=Math.imul(s^(s>>>15),1|s);
+    t=t+Math.imul(t^(t>>>7),61|t);
+    return((t^(t>>>14))>>>0)/4294967296;
+  };
+}
+
+function instData(sym){
+  const r=rng(sym);
+  const chg=(r()-0.48)*8;
+  const cvdDir=r()>0.55?'up':r()<0.45?'down':'neutral';
+  const imb=0.8+r()*2.4;
+  return{chg,cvdDir,imb};
+}
+
+// ── CVD series generation ─────────────────────────────────────────────────────
+
+function genCvd(sym, n=80){
+  const r=rng(sym+'cvd');
+  let v=0;const out=[];
+  for(let i=0;i<n;i++){out.push(v+=( r()-0.46)*800);}
+  return out;
+}
+
+// ── Asset tabs ────────────────────────────────────────────────────────────────
+
+function renderTabs(){
+  const el=document.getElementById('assettabs');
+  el.innerHTML=Object.entries(ASSETS).map(([k,v])=>
+    `<button class="assettab${k===activeAsset?' active':''}" data-asset="${k}">${v.label}</button>`
+  ).join('');
+  el.querySelectorAll('.assettab').forEach(b=>b.onclick=()=>switchAsset(b.dataset.asset));
+}
+
+function switchAsset(a){
+  activeAsset=a;
+  activeInst=ASSETS[a].instruments[0];
+  renderTabs();
+  renderSidebar();
+  selectInst(activeInst,true);
+  document.getElementById('assetlabel').textContent=ASSETS[a].label;
+  document.getElementById('instcount').textContent=ASSETS[a].instruments.length;
+}
+
+// ── Sidebar ───────────────────────────────────────────────────────────────────
+
+function renderSidebar(){
+  const q=(document.getElementById('search').value||'').toUpperCase();
+  const insts=ASSETS[activeAsset].instruments.filter(s=>s.includes(q));
+  const el=document.getElementById('instlist');
+  el.innerHTML=insts.map(sym=>{
+    const d=instData(sym);
+    const p=prices[sym]??100;
+    const isPos=d.chg>=0;
+    const cvdColor=d.cvdDir==='up'?'var(--buy)':d.cvdDir==='down'?'var(--sell)':'var(--text3)';
+    const cvdArr=d.cvdDir==='up'?'▲':d.cvdDir==='down'?'▼':'—';
+    const pStr=p>=10000?p.toLocaleString('en',{maximumFractionDigits:0}):p>=1?p.toFixed(2):p.toFixed(5);
+    const pct=Math.min(100,(d.imb/4)*100);
+    const imbColor=d.imb>=1?'rgba(34,211,238,.5)':'rgba(249,115,102,.5)';
+    return`<div class="instrow${sym===activeInst?' sel':''}" data-sym="${sym}">
+      <div class="instsym">${sym}<span style="font-size:11px;color:${cvdColor}">${cvdArr}</span></div>
+      <div>
+        <div class="instprice" style="color:${sym===activeInst?'var(--buy)':'var(--text2)'}">${pStr}</div>
+        <div class="instchg" style="color:${isPos?'var(--ok)':'var(--sell)'}">${isPos?'+':''}${d.chg.toFixed(2)}%</div>
+      </div>
+      <div class="imbar"><div class="imfill" style="width:${pct}%;background:${imbColor}"></div></div>
+    </div>`;
+  }).join('');
+  el.querySelectorAll('.instrow').forEach(r=>r.onclick=()=>selectInst(r.dataset.sym));
+}
+
+function selectInst(sym, skipRender){
+  activeInst=sym;
+  document.getElementById('selinst').textContent=sym;
+  document.getElementById('chartbadge').textContent=ASSETS[activeAsset].l2?'True L2':'Inferred';
+  document.getElementById('chartbadge').style.color=ASSETS[activeAsset].l2?'var(--buy)':'var(--warn)';
+  document.getElementById('chartbadge').style.borderColor=ASSETS[activeAsset].l2?'rgba(34,211,238,.2)':'rgba(251,191,36,.2)';
+  document.getElementById('chartbadge').style.background=ASSETS[activeAsset].l2?'rgba(34,211,238,.06)':'rgba(251,191,36,.06)';
+  if(!skipRender)renderSidebar();
+  cvdSeries=genCvd(sym);
+  drawChart();
+  renderPanel();
+  spawnTapeRows(sym);
+}
+
+// ── CVD chart ─────────────────────────────────────────────────────────────────
+
+function drawChart(){
+  const canvas=document.getElementById('chartcanvas');
+  const pane=document.getElementById('chartpane');
+  canvas.width=pane.clientWidth;canvas.height=pane.clientHeight;
+  const ctx=canvas.getContext('2d');
+  const W=canvas.width,H=canvas.height;
+  const pad={t:40,r:20,b:30,l:60};
+  const data=cvdSeries;
+  const n=data.length;
+  if(!n)return;
+  ctx.clearRect(0,0,W,H);
+
+  const mn=Math.min(...data),mx=Math.max(...data);
+  const range=mx-mn||1;
+  const xStep=(W-pad.l-pad.r)/(n-1);
+
+  function xOf(i){return pad.l+i*xStep;}
+  function yOf(v){return pad.t+(H-pad.t-pad.b)*(1-(v-mn)/range);}
+
+  // Grid lines
+  ctx.strokeStyle='rgba(31,33,40,.8)';ctx.lineWidth=1;
+  for(let i=0;i<=4;i++){
+    const y=pad.t+i*(H-pad.t-pad.b)/4;
+    ctx.beginPath();ctx.moveTo(pad.l,y);ctx.lineTo(W-pad.r,y);ctx.stroke();
+    const v=mx-(i/4)*range;
+    ctx.fillStyle='rgba(90,95,106,.7)';ctx.font='9px JetBrains Mono';
+    ctx.textAlign='right';ctx.fillText(v>=1000?(v/1000).toFixed(1)+'K':v.toFixed(0),pad.l-4,y+3);
+  }
+
+  // Zero line
+  if(mn<0&&mx>0){
+    const y=yOf(0);
+    ctx.strokeStyle='rgba(90,95,106,.4)';ctx.setLineDash([4,4]);
+    ctx.beginPath();ctx.moveTo(pad.l,y);ctx.lineTo(W-pad.r,y);ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
+  // Area fill
+  const lastVal=data[n-1];
+  const baseY=yOf(Math.max(0,mn));
+  const grad=ctx.createLinearGradient(0,pad.t,0,H-pad.b);
+  if(lastVal>=0){
+    grad.addColorStop(0,'rgba(34,211,238,.25)');
+    grad.addColorStop(1,'rgba(34,211,238,.01)');
+  }else{
+    grad.addColorStop(0,'rgba(249,115,102,.01)');
+    grad.addColorStop(1,'rgba(249,115,102,.25)');
+  }
+  ctx.beginPath();
+  ctx.moveTo(xOf(0),baseY);
+  data.forEach((v,i)=>ctx.lineTo(xOf(i),yOf(v)));
+  ctx.lineTo(xOf(n-1),baseY);
+  ctx.closePath();
+  ctx.fillStyle=grad;ctx.fill();
+
+  // Line
+  ctx.beginPath();
+  ctx.strokeStyle=lastVal>=0?'#22d3ee':'#f97366';
+  ctx.lineWidth=1.8;
+  data.forEach((v,i)=>{if(i===0)ctx.moveTo(xOf(i),yOf(v));else ctx.lineTo(xOf(i),yOf(v));});
+  ctx.stroke();
+
+  // Last point dot
+  ctx.beginPath();
+  ctx.arc(xOf(n-1),yOf(lastVal),4,0,Math.PI*2);
+  ctx.fillStyle=lastVal>=0?'#22d3ee':'#f97366';ctx.fill();
+
+  // Update CVD label
+  const el=document.getElementById('cvdval');
+  el.textContent=(lastVal>=0?'+':'')+Math.round(lastVal/1000*10)/10+'K';
+  el.style.color=lastVal>=0?'var(--buy)':'var(--sell)';
+}
+
+// ── Heatmap ───────────────────────────────────────────────────────────────────
+
+function drawHeatmap(){
+  const canvas=document.getElementById('heatcanvas');
+  const el=document.getElementById('heatmap');
+  canvas.width=el.clientWidth;canvas.height=el.clientHeight;
+  const ctx=canvas.getContext('2d');
+  const W=canvas.width,H=canvas.height;
+  ctx.clearRect(0,0,W,H);
+  const rows=14,cols=30;
+  const cw=W/cols,ch=H/rows;
+  const r=rng(activeInst+'heat');
+  for(let row=0;row<rows;row++){
+    for(let col=0;col<cols;col++){
+      const v=r();
+      const isBid=row>rows/2;
+      const intensity=Math.pow(v,2)*0.7;
+      if(v>0.55){
+        const alpha=intensity;
+        ctx.fillStyle=isBid?`rgba(34,211,238,${alpha})`:`rgba(249,115,102,${alpha})`;
+        ctx.fillRect(col*cw,row*ch,cw-1,ch-1);
+      }
+    }
+  }
+  // Price line
+  ctx.strokeStyle='rgba(230,232,238,.25)';ctx.lineWidth=1;ctx.setLineDash([3,3]);
+  ctx.beginPath();ctx.moveTo(0,H/2);ctx.lineTo(W,H/2);ctx.stroke();ctx.setLineDash([]);
+}
+
+// ── Tape ──────────────────────────────────────────────────────────────────────
+
+function spawnTapeRows(sym){
+  const basePrice=prices[sym]??100;
+  tapeRows=[];
+  const r=rng(sym+'tape');
+  for(let i=0;i<40;i++){
+    const side=r()>0.45?'buy':'sell';
+    const size=r()>0.9?r()*50+10:r()*5+0.5;
+    const price=basePrice*(1+(r()-0.5)*0.002);
+    const ageSec=Math.round(i*r()*8+1);
+    tapeRows.push({side,size,price,ageSec});
+  }
+}
+
+function tapePanelHTML(){
+  const head=`<div class="tapehead">
+    <span>TIME</span><span>PRICE</span><span>SIDE</span><span>SIZE</span><span>TYPE</span>
+  </div>`;
+  const rows=tapeRows.slice(0,25).map(t=>{
+    const pStr=t.price>=10000?t.price.toLocaleString('en',{maximumFractionDigits:0}):t.price>=1?t.price.toFixed(2):t.price.toFixed(5);
+    const col=t.side==='buy'?'var(--buy)':'var(--sell)';
+    const type=t.size>15?'SWEEP':t.size>5?'LARGE':'PRINT';
+    const typeCol=t.size>15?'var(--warn)':t.size>5?'var(--text)':'var(--text3)';
+    const now=new Date();now.setSeconds(now.getSeconds()-t.ageSec);
+    const hh=String(now.getHours()).padStart(2,'0');
+    const mm=String(now.getMinutes()).padStart(2,'0');
+    const ss=String(now.getSeconds()).padStart(2,'0');
+    return`<div class="taperow">
+      <span style="color:var(--text3)">${hh}:${mm}:${ss}</span>
+      <span style="color:var(--text)">${pStr}</span>
+      <span style="color:${col};font-weight:600">${t.side.toUpperCase()}</span>
+      <span style="color:var(--text)">${t.size.toFixed(2)}</span>
+      <span style="color:${typeCol};font-size:10px">${type}</span>
+    </div>`;
+  }).join('');
+  return`<div style="display:flex;flex-direction:column;height:100%">${head}<div style="overflow-y:auto;flex:1;scrollbar-width:thin;scrollbar-color:var(--border) transparent">${rows}</div></div>`;
+}
+
+function tapeAiPanelHTML(){
+  const narr=TAPE_NARRATION[activeInst]||TAPE_NARRATION.default;
+  return`<div class="aipanel">
+    <div class="aicard" style="display:flex;align-items:flex-start;gap:10px">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#22d3ee" stroke-width="2" style="flex-shrink:0;margin-top:2px"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/></svg>
+      <div>
+        <p>${narr}</p>
+        <div style="display:flex;gap:8px;margin-top:6px;font-family:var(--mono);font-size:9px;color:var(--text3)">
+          <span class="modelbadge">claude-haiku-4-5</span>
+          <span>$0.00012</span>
+          <span>auto-refresh 60s</span>
+        </div>
+      </div>
+    </div>
+  </div>`;
+}
+
+function deepPanelHTML(){
+  const analysis=DEEP_ANALYSIS[activeInst];
+  if(!analysis){
+    return`<div class="gate">
+      <div class="blurred">
+        <p><strong>A) Structure</strong></p><p>VPOC at ${(prices[activeInst]??100).toFixed(0)} is the dominant control level. VAH / VAL define the value area. HVN cluster acts as a magnetic zone. LVN is a fast-move corridor on breakout.</p>
+        <p><strong>B) Order Flow</strong></p><p>CVD rising +12.4K net. Imbalance ratio 1.42× bid-dominant. Delta positive on up-closes.</p>
+        <p><strong>C) Forward-Looking</strong></p><p>Bullish: reclaim VAH on volume. Bearish: break VPOC with CVD negative.</p>
+        <p><strong>D) Risk</strong></p><p>Stop beneath VAL. Not investment advice.</p>
+      </div>
+      <div class="gateoverlay"><div class="gatebox">
+        <h3>Pro Feature</h3>
+        <p>Deep Analysis of <strong style="color:var(--text)">${activeInst}</strong> is powered by Claude Opus — our most advanced model.</p>
+        <a href="#" class="upgradebtn">Upgrade to Pro</a>
+      </div></div>
+    </div>`;
+  }
+  const html=analysis.replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>').replace(/\n/g,'<br/>');
+  return`<div class="aipanel">
+    <div style="display:flex;align-items:center;gap:8px;flex-shrink:0">
+      <span class="modelbadge">claude-opus-4-7</span>
+      <span style="font-family:var(--mono);font-size:9px;color:var(--text3)">1.2s · $0.0048 · 412→380 tok</span>
+    </div>
+    <div class="aicard"><p style="white-space:pre-wrap;font-size:12px;line-height:1.75;color:#c9d1d9">${html}</p></div>
+  </div>`;
+}
+
+function corrPanelHTML(){
+  const insts=ASSETS[activeAsset].instruments;
+  const b=insts[1]??insts[0];
+  const key=`${activeInst}:${b}`;
+  const d=CORR_DATA[key]||CORR_DATA.default;
+  const pct=Math.abs(d.r)*100;
+  const narr=d.r>0.7
+    ?`${activeInst} and ${b} are moving in strong lockstep — CVD series highly correlated. No divergence trade opportunity; trend following mode.`
+    :`${activeInst} and ${b} showing moderate divergence. ${activeInst} leading with stronger CVD momentum — potential pair trade or relative value opportunity.`;
+  return`<div class="aipanel">
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+      <select style="background:var(--bg);border:1px solid var(--border2);border-radius:5px;color:var(--text);font-size:11px;font-family:var(--mono);padding:5px 8px;outline:none">
+        ${insts.map(s=>`<option${s===activeInst?' selected':''}>${s}</option>`).join('')}
+      </select>
+      <span style="font-size:10px;color:var(--text3)">vs</span>
+      <select style="background:var(--bg);border:1px solid var(--border2);border-radius:5px;color:var(--text);font-size:11px;font-family:var(--mono);padding:5px 8px;outline:none">
+        ${insts.map(s=>`<option${s===b?' selected':''}>${s}</option>`).join('')}
+      </select>
+    </div>
+    <div>
+      <div style="display:flex;align-items:baseline;gap:10px">
+        <span class="corr-num" style="color:${d.color}">${d.r.toFixed(3)}</span>
+        <span style="font-family:var(--mono);font-size:11px;color:${d.color}">${d.label}</span>
+        ${d.r<0.5?`<span style="font-family:var(--mono);font-size:9px;background:#1a1509;color:var(--warn);border:1px solid rgba(251,191,36,.3);border-radius:4px;padding:2px 6px">DIVERGENCE</span>`:''}
+      </div>
+      <div class="corr-bar"><div class="corr-fill" style="width:${pct}%;background:${d.color}"></div></div>
+      <span style="font-family:var(--mono);font-size:9px;color:var(--text3)">n=50 1h bars · ${activeInst} vs ${b}</span>
+    </div>
+    <div class="aicard">
+      <p>${narr}</p>
+      <div style="font-family:var(--mono);font-size:9px;color:var(--text3);margin-top:6px">
+        <span class="modelbadge">claude-haiku-4-5</span> &nbsp;cached 5min
+      </div>
+    </div>
+  </div>`;
+}
+
+// ── Panel router ──────────────────────────────────────────────────────────────
+
+function renderPanel(){
+  const el=document.getElementById('panelbody');
+  if(activePanel==='tape')      el.innerHTML=tapePanelHTML();
+  else if(activePanel==='tape_ai') el.innerHTML=tapeAiPanelHTML();
+  else if(activePanel==='deep') el.innerHTML=deepPanelHTML();
+  else if(activePanel==='corr') el.innerHTML=corrPanelHTML();
+}
+
+document.getElementById('tabbar').addEventListener('click',e=>{
+  const btn=e.target.closest('.btab');if(!btn)return;
+  activePanel=btn.dataset.panel;
+  document.querySelectorAll('.btab').forEach(b=>b.classList.toggle('active',b===btn));
+  renderPanel();
+});
+
+// ── Search ────────────────────────────────────────────────────────────────────
+
+document.getElementById('search').addEventListener('input',renderSidebar);
+
+// ── Live price tick simulation ────────────────────────────────────────────────
+
+function tickPrices(){
+  for(const sym of ASSETS[activeAsset].instruments){
+    const base=BASE_PRICES[sym]??100;
+    prices[sym]=(prices[sym]??base)*( 1+(Math.random()-0.5)*0.0004);
+  }
+  renderSidebar();
+  // Extend CVD
+  const last=cvdSeries[cvdSeries.length-1]??0;
+  cvdSeries.push(last+(Math.random()-0.46)*800);
+  if(cvdSeries.length>120)cvdSeries.shift();
+  drawChart();
+}
+
+// ── Resize ────────────────────────────────────────────────────────────────────
+
+const ro=new ResizeObserver(()=>{drawChart();drawHeatmap();});
+ro.observe(document.getElementById('chartpane'));
+ro.observe(document.getElementById('heatmap'));
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+
+renderTabs();
+renderSidebar();
+selectInst('BTCUSDT',true);
+drawHeatmap();
+setInterval(tickPrices,1200);
+setInterval(()=>{
+  if(activePanel==='tape'){spawnTapeRows(activeInst);renderPanel();}
+},2000);
+</script>
+</body>
+</html>
