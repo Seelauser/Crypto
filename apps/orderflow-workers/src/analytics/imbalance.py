@@ -129,37 +129,60 @@ def compute_level_imbalances(
     """
     Per-price-level imbalance for footprint-chart rendering.
 
-    The function matches bid and ask levels by price.  Levels that exist on
-    only one side are included with a zero for the missing side.
+    Follows the standard footprint-chart convention: each bid level is
+    compared against the ask level at the same rank (index), not the same
+    price.  This reflects how footprint charts are visually rendered — the
+    bid on row N is highlighted against the ask on the same horizontal row.
+
+    Bids are expected sorted best (highest) first; asks sorted best (lowest)
+    first.  The result list is sorted by price descending.
 
     Returns
     -------
     list of dict
         Keys: ``price``, ``bid_vol``, ``ask_vol``, ``ratio``, ``dominant_side``,
         ``highlight`` (``None`` | ``'3x'`` | ``'10x'``).
-        Sorted by price descending (highest price first).
+
+        For bid levels: ``ask_vol`` is the size of the ask at the same rank.
+        For ask levels: ``bid_vol`` is the size of the bid at the same rank.
+        Levels that have no counterpart at the same rank use 0.0.
     """
-    # Build price → size maps.
-    bid_map: dict[float, float] = {lvl.price: lvl.size for lvl in bids}
-    ask_map: dict[float, float] = {lvl.price: lvl.size for lvl in asks}
-
-    all_prices = sorted(bid_map.keys() | ask_map.keys(), reverse=True)
-
     result: list[dict] = []
-    for price in all_prices:
-        bid_size = bid_map.get(price, 0.0)
-        ask_size = ask_map.get(price, 0.0)
-        ratio, dom_side = _dominant(bid_size, ask_size)
+
+    # --- Bid levels (sorted highest price first) ---
+    for i, bid_lvl in enumerate(bids):
+        paired_ask_size = asks[i].size if i < len(asks) else 0.0
+        bid_size = bid_lvl.size
+        ratio, dom_side = _dominant(bid_size, paired_ask_size)
         result.append(
             {
-                "price": price,
+                "price": bid_lvl.price,
                 "bid_vol": bid_size,
+                "ask_vol": paired_ask_size,
+                "ratio": ratio,
+                "dominant_side": dom_side,
+                "highlight": _highlight_label(bid_size, paired_ask_size),
+            }
+        )
+
+    # --- Ask levels that don't have a corresponding bid at the same rank ---
+    for j in range(len(bids), len(asks)):
+        ask_lvl = asks[j]
+        ask_size = ask_lvl.size
+        ratio, dom_side = _dominant(0.0, ask_size)
+        result.append(
+            {
+                "price": ask_lvl.price,
+                "bid_vol": 0.0,
                 "ask_vol": ask_size,
                 "ratio": ratio,
                 "dominant_side": dom_side,
-                "highlight": _highlight_label(bid_size, ask_size),
+                "highlight": _highlight_label(0.0, ask_size),
             }
         )
+
+    # Sort by price descending.
+    result.sort(key=lambda x: x["price"], reverse=True)
     return result
 
 
