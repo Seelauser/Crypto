@@ -73,7 +73,7 @@ interface ListScansQuerystring {
 
 // ─── Plugin ───────────────────────────────────────────────────────────────────
 
-export default async function scansPlugin(fastify: FastifyInstance): Promise<void> {
+export async function scansRouter(fastify: FastifyInstance): Promise<void> {
 
   // ── POST / — run a scan ────────────────────────────────────────────────────
   //

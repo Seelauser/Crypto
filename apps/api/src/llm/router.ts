@@ -1,5 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk';
-import db from '../db';
+import { db } from '../db';
 
 // ─── Feature / Model Types ────────────────────────────────────────────────────
 // Extended locally to include all spec-defined features. The shared package

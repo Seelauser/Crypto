@@ -63,7 +63,7 @@ interface EventsQuerystring {
 
 // ─── Plugin ───────────────────────────────────────────────────────────────────
 
-export default async function signalsPlugin(fastify: FastifyInstance): Promise<void> {
+export async function signalsRouter(fastify: FastifyInstance): Promise<void> {
 
   // ── GET / — list signal setups ─────────────────────────────────────────────
   //
@@ -261,4 +261,32 @@ export default async function signalsPlugin(fastify: FastifyInstance): Promise<v
       });
     },
   );
+
+  // ── GET /active — internal endpoint for the Python trigger evaluator ────────
+  //
+  // Returns all armed signal setups across all users. This route is called by
+  // apps/orderflow-workers/src/triggers/evaluator.py on startup and on a
+  // periodic refresh. It is internal-only: protected by a shared secret rather
+  // than user auth, so it should not be exposed beyond the private network.
+
+  fastify.get('/active', async (req: FastifyRequest, reply: FastifyReply) => {
+    const secret = process.env.INTERNAL_API_SECRET;
+    if (secret && req.headers['x-internal-secret'] !== secret) {
+      return reply.code(401).send({ error: 'unauthorized' });
+    }
+
+    const setups = await db.signalSetup.findMany({
+      where: { status: 'armed' },
+      select: {
+        id:                   true,
+        userId:               true,
+        instruments:          true,
+        triggerConfig:        true,
+        cooldownMinutes:      true,
+        notificationChannels: true,
+      },
+    });
+
+    return reply.send({ data: setups });
+  });
 }

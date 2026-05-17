@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { UserTier } from '@orderflow/types';
 import TierGateModal from '@/components/ui/TierGateModal';
+import { useMarketSocket } from '@/lib/ws';
 
 interface DomLevel {
   price: number;
@@ -41,19 +42,43 @@ export default function DomLadder({ instrument, tier, height = 400 }: Props) {
     AAPL: 180, NVDA: 500, ES: 5200, GC: 2000, EURUSD: 1.082,
   };
 
+  const { lastMessage } = useMarketSocket([instrument], ['market:orderbook']);
+
   useEffect(() => {
     const base = BASE_PRICES[instrument] ?? 100;
     setMid(base);
     setDom(generateMockDom(base));
-    // Simulate live updates
+  }, [instrument]);
+
+  // Apply real orderbook snapshots from WS when available; fall back to mock drift
+  useEffect(() => {
+    if (!lastMessage || lastMessage.channel !== 'market:orderbook') return;
+    const data = lastMessage.data as {
+      instrument?: string;
+      bids?: Array<[number, number]>;
+      asks?: Array<[number, number]>;
+    };
+    if (data.instrument !== instrument || !data.bids || !data.asks) return;
+
+    const newMid = data.bids[0]?.[0] ?? mid;
+    const levels: DomLevel[] = [
+      ...data.asks.slice(0, 20).map(([price, size]) => ({ price, bidSize: 0, askSize: size, isBid: false })).reverse(),
+      ...data.bids.slice(0, 20).map(([price, size]) => ({ price, bidSize: size, askSize: 0, isBid: true })),
+    ];
+    setMid(newMid);
+    setDom(levels);
+  }, [lastMessage, instrument]);
+
+  // Simulate mild drift when no live WS data arrives (offline / dev mode)
+  useEffect(() => {
+    const base = BASE_PRICES[instrument] ?? 100;
     const interval = setInterval(() => {
-      const drift = (Math.random() - 0.5) * base * 0.0005;
       setMid(m => {
-        const newMid = m + drift;
+        const newMid = m + (Math.random() - 0.5) * base * 0.0005;
         setDom(generateMockDom(newMid));
         return newMid;
       });
-    }, 800);
+    }, 2000);
     return () => clearInterval(interval);
   }, [instrument]);
 
