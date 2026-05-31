@@ -97,10 +97,11 @@ export default function CvdChart({
       try {
         const res = await fetch(`/api/markets/${instrument}/bars?tf=5m&limit=200`);
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const data: OhlcvBar[] = await res.json();
+        const payload: { bars?: OhlcvBar[] } | OhlcvBar[] = await res.json();
+        const bars: OhlcvBar[] = Array.isArray(payload) ? payload : (payload.bars ?? []);
         if (cancelled) return;
-        barsRef.current = data;
-        populateChart(data);
+        barsRef.current = bars;
+        populateChart(bars);
       } catch (e: any) {
         if (!cancelled) setError(e?.message ?? 'Failed to load bars');
       } finally {

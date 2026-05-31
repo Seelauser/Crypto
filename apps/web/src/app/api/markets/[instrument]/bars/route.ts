@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import type { OhlcvBar } from '@orderflow/types';
+import { db } from '@/lib/db';
 
-// ─── Instrument Seed Prices ───────────────────────────────────────────────────
+// ─── Instrument Seed Prices (for synthetic fallback) ─────────────────────────
 
 const INSTRUMENT_SEEDS: Record<string, { price: number; volume: number; exchange: string }> = {
   // Crypto
@@ -55,7 +56,7 @@ const INSTRUMENT_SEEDS: Record<string, { price: number; volume: number; exchange
   CORN:     { price: 430,    volume: 20000,  exchange: 'cbot' },
 };
 
-// ─── Timeframe → Minutes ──────────────────────────────────────────────────────
+// ─── Timeframe → minutes + TimescaleDB bucket interval ───────────────────────
 
 const TIMEFRAME_MINUTES: Record<string, number> = {
   '1m':  1,
@@ -66,9 +67,97 @@ const TIMEFRAME_MINUTES: Record<string, number> = {
   '1d':  1440,
 };
 
-// ─── Seeded PRNG (Mulberry32) ─────────────────────────────────────────────────
-// Used to generate deterministic synthetic data per instrument so the chart
-// looks consistent across page refreshes within a session.
+const TIMEFRAME_BUCKET: Record<string, string> = {
+  '1m':  '1 minute',
+  '5m':  '5 minutes',
+  '15m': '15 minutes',
+  '1h':  '1 hour',
+  '4h':  '4 hours',
+  '1d':  '1 day',
+};
+
+// ─── Real bars from market_ticks via TimescaleDB time_bucket ─────────────────
+
+interface RawBar {
+  bucket_ts: Date;
+  open:   string;
+  high:   string;
+  low:    string;
+  close:  string;
+  volume: string;
+  delta:  string;
+}
+
+async function fetchRealBars(
+  instrument: string,
+  timeframe: string,
+  limit: number,
+): Promise<OhlcvBar[] | null> {
+  const bucket   = TIMEFRAME_BUCKET[timeframe];
+  const minutes  = TIMEFRAME_MINUTES[timeframe];
+  if (!bucket || !minutes) return null;
+
+  // Window covers (limit + a small buffer) bars to compensate for empty
+  // buckets — request a few extra so we still return up to `limit` after
+  // the LIMIT clause trims them. Buffer is small for tight TFs, larger
+  // for daily where gaps are unlikely.
+  const windowMin = (limit + 8) * minutes;
+
+  // Use $queryRawUnsafe sparingly here — both bucket and interval are
+  // sourced from the fixed TIMEFRAME_* whitelists, so no injection risk.
+  // Numeric inputs use parameterised values.
+  const rows = await db.$queryRawUnsafe<RawBar[]>(
+    `
+    SELECT
+      time_bucket('${bucket}'::interval, ts)                                 AS bucket_ts,
+      first(price, ts)::text                                                  AS open,
+      max(price)::text                                                        AS high,
+      min(price)::text                                                        AS low,
+      last(price, ts)::text                                                   AS close,
+      sum(size)::text                                                         AS volume,
+      sum(CASE WHEN side = 'buy' THEN size
+               WHEN side = 'sell' THEN -size
+               ELSE 0 END)::text                                              AS delta
+    FROM market_ticks
+    WHERE instrument = $1
+      AND ts >= NOW() - ($2 || ' minutes')::interval
+    GROUP BY bucket_ts
+    ORDER BY bucket_ts DESC
+    LIMIT $3
+    `,
+    instrument,
+    String(windowMin),
+    limit,
+  );
+
+  if (rows.length === 0) return null;
+
+  // Rows are descending; reverse to ascending for charts + CVD accumulation.
+  rows.reverse();
+
+  let cvd = 0;
+  const bars: OhlcvBar[] = rows.map(r => {
+    const delta = parseFloat(r.delta);
+    cvd += delta;
+    return {
+      instrument,
+      exchange: 'binance',
+      ts:        r.bucket_ts.getTime(),
+      timeframe,
+      open:   parseFloat(r.open),
+      high:   parseFloat(r.high),
+      low:    parseFloat(r.low),
+      close:  parseFloat(r.close),
+      volume: parseFloat(r.volume),
+      delta,
+      cvd,
+    };
+  });
+
+  return bars;
+}
+
+// ─── Synthetic fallback (Seeded PRNG + Box-Muller) ───────────────────────────
 
 function seedRng(seed: number) {
   let s = seed;
@@ -90,9 +179,6 @@ function instrumentSeed(instrument: string): number {
   return h >>> 0;
 }
 
-// ─── Lognormal Sample ─────────────────────────────────────────────────────────
-// Box-Muller transform for normally distributed random numbers.
-
 function randNorm(rng: () => number): number {
   const u1 = rng();
   const u2 = rng();
@@ -103,9 +189,7 @@ function randLogNorm(rng: () => number, mean: number, sigma: number): number {
   return mean * Math.exp(sigma * randNorm(rng));
 }
 
-// ─── Synthetic Bar Generation ─────────────────────────────────────────────────
-
-function generateBars(
+function generateSyntheticBars(
   instrument: string,
   timeframe: string,
   limit: number,
@@ -114,20 +198,16 @@ function generateBars(
   const seed = instrumentSeed(instrument);
   const rng  = seedRng(seed ^ (limit << 16) ^ (tf << 8));
 
-  // Resolve seed price — fall back to a hash-derived value for unknown instruments
   const seedInfo = INSTRUMENT_SEEDS[instrument.toUpperCase()];
   let   price    = seedInfo?.price ?? (100 + (seed % 9900));
   const baseVol  = seedInfo?.volume ?? 10000;
   const exchange = seedInfo?.exchange ?? 'unknown';
 
-  // Volatility scales with timeframe
   const volScale = Math.sqrt(tf / 5);
-  const priceVol = 0.001 * volScale;  // 0.1% per 5m bar
+  const priceVol = 0.001 * volScale;
 
-  // CVD accumulator
   let cvd = 0;
 
-  // Bias direction cycles every ~20 bars for realism
   const now = Date.now();
   const intervalMs = tf * 60 * 1000;
   const startTs = now - (limit - 1) * intervalMs;
@@ -137,21 +217,17 @@ function generateBars(
   for (let i = 0; i < limit; i++) {
     const ts = startTs + i * intervalMs;
 
-    // Random walk for close
     const pct    = randNorm(rng) * priceVol;
     const close  = price * (1 + pct);
 
-    // Intrabar range
     const rangeVol = Math.abs(randNorm(rng)) * priceVol * 0.6;
     const range    = price * rangeVol;
     const open     = price;
     const high     = Math.max(open, close) + range * rng();
     const low      = Math.min(open, close) - range * rng();
 
-    // Volume (lognormal)
     const volume = Math.round(randLogNorm(rng, baseVol, 0.5));
 
-    // Delta: alternating bias block every 20 bars
     const biasBlock = Math.floor(i / 20) % 3;
     const biasRatio = biasBlock === 0 ? 0.55 : biasBlock === 1 ? 0.45 : 0.50;
     const buyVol  = Math.round(volume * (biasRatio + (rng() - 0.5) * 0.15));
@@ -179,7 +255,7 @@ function generateBars(
   return bars;
 }
 
-// ─── Route Handler ────────────────────────────────────────────────────────────
+// ─── Route Handler ───────────────────────────────────────────────────────────
 
 export async function GET(
   req: NextRequest,
@@ -198,19 +274,38 @@ export async function GET(
     );
   }
 
-  const upper    = instrument.toUpperCase();
-  const seedInfo = INSTRUMENT_SEEDS[upper];
-  const exchange = seedInfo?.exchange ?? 'unknown';
+  const upper = instrument.toUpperCase();
 
-  const bars = generateBars(upper, tf, limit);
+  // Try real data first; fall back to synthetic if the hypertable has none
+  // for this instrument yet.
+  let bars: OhlcvBar[] | null = null;
+  let source: 'live' | 'synthetic' = 'synthetic';
+  try {
+    bars = await fetchRealBars(upper, tf, limit);
+    if (bars && bars.length > 0) source = 'live';
+  } catch (err) {
+    // DB unreachable — drop into synthetic
+    console.error('bars: real-data query failed, falling back to synthetic', err);
+    bars = null;
+  }
+
+  if (!bars || bars.length === 0) {
+    bars = generateSyntheticBars(upper, tf, limit);
+  }
+
+  const exchange = bars[0]?.exchange
+    ?? INSTRUMENT_SEEDS[upper]?.exchange
+    ?? 'unknown';
 
   return NextResponse.json(
-    { instrument: upper, exchange, timeframe: tf, bars },
+    { instrument: upper, exchange, timeframe: tf, source, bars },
     {
       headers: {
-        // Allow short caching for public market data; 10s for sub-minute TFs
-        'Cache-Control': tf === '1m' ? 's-maxage=10, stale-while-revalidate=20'
-                                     : 's-maxage=60, stale-while-revalidate=120',
+        'Cache-Control': source === 'live'
+          ? 's-maxage=5, stale-while-revalidate=10'   // tighter cache for real data
+          : (tf === '1m'
+              ? 's-maxage=10, stale-while-revalidate=20'
+              : 's-maxage=60, stale-while-revalidate=120'),
       },
     },
   );
