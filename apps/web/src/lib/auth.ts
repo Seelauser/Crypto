@@ -1,21 +1,50 @@
-import NextAuth from 'next-auth';
+import NextAuth, { type DefaultSession } from 'next-auth';
 import Credentials from 'next-auth/providers/credentials';
 import { PrismaAdapter } from '@auth/prisma-adapter';
 import bcrypt from 'bcryptjs';
 import { db } from './db';
 import { z } from 'zod';
 
+// ─── Session type augmentation ────────────────────────────────────────────────
+
+declare module 'next-auth' {
+  interface Session {
+    user: {
+      id:                string;
+      tier:              'free' | 'premium';
+      tokenBalanceCents: number;
+    } & DefaultSession['user'];
+  }
+
+  interface User {
+    tier:              'free' | 'premium';
+    tokenBalanceCents: number;
+  }
+}
+
+declare module 'next-auth/jwt' {
+  interface JWT {
+    id:                string;
+    tier:              'free' | 'premium';
+    tokenBalanceCents: number;
+  }
+}
+
+// ─── Validation ───────────────────────────────────────────────────────────────
+
 const loginSchema = z.object({
-  email: z.string().email(),
+  email:    z.string().email(),
   password: z.string().min(1),
 });
 
+// ─── Auth config ──────────────────────────────────────────────────────────────
+
 export const { handlers, auth, signIn, signOut } = NextAuth({
-  adapter: PrismaAdapter(db) as any,
+  adapter: PrismaAdapter(db) as ReturnType<typeof PrismaAdapter>,
   session: { strategy: 'jwt' },
   pages: {
     signIn: '/login',
-    error: '/login',
+    error:  '/login',
   },
   providers: [
     Credentials({
@@ -24,7 +53,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         if (!parsed.success) return null;
 
         const user = await db.user.findUnique({
-          where: { email: parsed.data.email },
+          where:   { email: parsed.data.email },
           include: { tokenLedger: true },
         });
         if (!user) return null;
@@ -34,10 +63,10 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         if (!passwordMatch) return null;
 
         return {
-          id: user.id,
-          email: user.email,
-          name: user.username,
-          tier: user.tier,
+          id:                user.id,
+          email:             user.email,
+          name:              user.username,
+          tier:              user.tier as 'free' | 'premium',
           tokenBalanceCents: user.tokenLedger?.balanceCents ?? 0,
         };
       },
@@ -46,18 +75,16 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   callbacks: {
     async jwt({ token, user }) {
       if (user) {
-        token.id = user.id;
-        token.tier = (user as any).tier;
-        token.tokenBalanceCents = (user as any).tokenBalanceCents;
+        token.id                = user.id!;
+        token.tier              = user.tier;
+        token.tokenBalanceCents = user.tokenBalanceCents;
       }
       return token;
     },
     async session({ session, token }) {
-      if (token) {
-        session.user.id = token.id as string;
-        (session.user as any).tier = token.tier;
-        (session.user as any).tokenBalanceCents = token.tokenBalanceCents;
-      }
+      session.user.id                = token.id;
+      session.user.tier              = token.tier;
+      session.user.tokenBalanceCents = token.tokenBalanceCents;
       return session;
     },
   },

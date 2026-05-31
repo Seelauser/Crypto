@@ -17,6 +17,13 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Invalid signature' }, { status: 400 });
   }
 
+  // Idempotency: ignore events we've already processed (Stripe retries on failure)
+  const alreadyProcessed = await db.stripeEvent.findUnique({ where: { stripeId: event.id } });
+  if (alreadyProcessed) {
+    return NextResponse.json({ received: true, skipped: 'already_processed' });
+  }
+  await db.stripeEvent.create({ data: { stripeId: event.id, type: event.type } });
+
   switch (event.type) {
     case 'checkout.session.completed': {
       const session = event.data.object as Stripe.Checkout.Session;

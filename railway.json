@@ -1,0 +1,39 @@
+{
+  "$schema": "https://railway.app/json-schema/railway.json",
+  "build": {
+    "builder": "NIXPACKS"
+  },
+  "deploy": {
+    "numReplicas": 1,
+    "startCommand": "pnpm db:migrate && pnpm dev",
+    "healthchecks": {
+      "cpu": {
+        "percentage": 80
+      },
+      "memory": {
+        "percentage": 80
+      }
+    }
+  },
+  "variables": {
+    "NEXTAUTH_URL": {
+      "description": "Auth callback URL",
+      "value": "${{ RAILWAY_PUBLIC_DOMAIN }}"
+    },
+    "NEXTAUTH_SECRET": {
+      "description": "Auth secret - generate with: openssl rand -base64 32",
+      "value": ""
+    },
+    "NODE_ENV": {
+      "value": "production"
+    },
+    "DATABASE_URL": {
+      "description": "PostgreSQL connection string",
+      "value": "${{ DATABASE_URL }}"
+    },
+    "REDIS_URL": {
+      "description": "Redis connection string",
+      "value": "${{ REDIS_URL }}"
+    }
+  }
+}

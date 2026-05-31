@@ -41,6 +41,7 @@ import os
 import time
 from typing import Any, Dict, List, Optional
 
+import httpx
 import redis.asyncio as aioredis
 from dotenv import load_dotenv
 
@@ -283,8 +284,8 @@ class _SetupCache:
     your DB fetch coroutine by overriding :meth:`_fetch_from_db`.
     """
 
-    def __init__(self, db_url: str, ttl: float = SETUP_CACHE_TTL) -> None:
-        self.db_url = db_url
+    def __init__(self, api_url: str, ttl: float = SETUP_CACHE_TTL) -> None:
+        self.api_url = api_url.rstrip('/')
         self.ttl = ttl
         self._cache: List[Dict[str, Any]] = []
         self._fetched_at: float = 0.0
@@ -298,26 +299,29 @@ class _SetupCache:
 
     async def _fetch_from_db(self) -> List[Dict[str, Any]]:
         """
-        Fetch all active signal setups from the database.
+        Fetch all active signal setups from the Fastify API's internal endpoint.
 
-        Each setup dict must contain at minimum:
-            id              — unique setup identifier
-            user_id         — owner
-            instruments     — list of instrument strings, e.g. ['BTCUSDT']
-            trigger_config  — dict understood by evaluate_trigger()
-            cooldown_minutes — int, suppression period after firing
+        Returns a list of setup dicts with keys:
+            id, userId, instruments, triggerConfig, cooldownMinutes,
+            notificationChannels
         """
-        # ----------------------------------------------------------------
-        # TODO: replace with real async DB query, e.g.:
-        #
-        #   async with asyncpg.connect(self.db_url) as conn:
-        #       rows = await conn.fetch(
-        #           "SELECT * FROM signal_setups WHERE active = TRUE"
-        #       )
-        #       return [dict(r) for r in rows]
-        # ----------------------------------------------------------------
-        logger.debug("_fetch_from_db: no DB connection configured — returning empty setup list")
-        return []
+        url = f"{self.api_url}/signals/active"
+        secret = os.getenv("INTERNAL_API_SECRET", "")
+        headers = {"x-internal-secret": secret} if secret else {}
+
+        try:
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                resp = await client.get(url, headers=headers)
+                if resp.status_code != 200:
+                    logger.error("_fetch_from_db: API returned %d — using cached setups", resp.status_code)
+                    return self._cache  # stale is better than empty on transient errors
+                payload = resp.json()
+                setups = payload.get("data", [])
+                logger.info("_fetch_from_db: loaded %d active setups", len(setups))
+                return setups
+        except Exception as exc:
+            logger.error("_fetch_from_db: request failed (%s) — using cached setups", exc)
+            return self._cache  # stale is better than empty on transient errors
 
 
 # ---------------------------------------------------------------------------
@@ -332,17 +336,18 @@ class TriggerEvaluator:
     ----------
     redis_url:
         Redis DSN (e.g. ``redis://localhost:6379``).
-    db_url:
-        PostgreSQL DSN used for loading active signal setups.
+    api_url:
+        Base URL of the internal Fastify API (e.g. ``http://localhost:4000``).
+        The evaluator fetches active signal setups from ``{api_url}/signals/active``.
     """
 
-    def __init__(self, redis_url: str, db_url: str) -> None:
+    def __init__(self, redis_url: str, api_url: str) -> None:
         self.redis_url = redis_url
-        self.db_url = db_url
+        self.api_url = api_url
 
         self._redis: Optional[aioredis.Redis] = None
         self._state_store = _MarketStateStore()
-        self._setup_cache = _SetupCache(db_url=db_url)
+        self._setup_cache = _SetupCache(api_url=api_url)
 
     # ------------------------------------------------------------------
     # Public
@@ -505,7 +510,7 @@ class TriggerEvaluator:
 async def main() -> None:
     evaluator = TriggerEvaluator(
         redis_url=os.getenv("REDIS_URL", "redis://localhost:6379"),
-        db_url=os.getenv("DATABASE_URL", ""),
+        api_url=os.getenv("INTERNAL_API_URL", "http://localhost:4000"),
     )
     await evaluator.run()
 

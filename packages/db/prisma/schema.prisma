@@ -214,3 +214,13 @@ model DailyRecap {
   @@index([userId, createdAt])
   @@map("daily_recaps")
 }
+
+// Tracks processed Stripe event IDs to prevent duplicate webhook handling.
+model StripeEvent {
+  id          String   @id @default(cuid())
+  stripeId    String   @unique @map("stripe_id")
+  type        String
+  processedAt DateTime @default(now()) @map("processed_at")
+
+  @@map("stripe_events")
+}

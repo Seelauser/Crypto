@@ -103,7 +103,32 @@ export default function FootprintChart({ instrument, tier, height = 480 }: Props
   const basePrice = BASE_PRICES[instrument] ?? 100;
 
   useEffect(() => {
-    setBars(generateMockBars(basePrice));
+    let cancelled = false;
+    async function load() {
+      try {
+        const res = await fetch(`/api/markets/${instrument}/footprint?tf=5m&limit=12`);
+        if (!res.ok) throw new Error('API error');
+        const json = await res.json();
+        if (cancelled) return;
+        // Map API FootprintBar → local FootprintBar shape
+        const mapped: FootprintBar[] = (json.bars ?? []).map((b: {
+          ts: number; open: number; close: number; delta: number; volume: number;
+          levels: Array<{ price: number; bidVol: number; askVol: number; imbalance: number }>;
+        }) => ({
+          ts: b.ts, open: b.open, close: b.close, delta: b.delta, totalVol: b.volume,
+          cells: b.levels.map(l => ({
+            price: l.price, bidVol: l.bidVol, askVol: l.askVol,
+            ratio: l.imbalance,
+            highlight: l.imbalance >= 10 ? '10x' as const : l.imbalance >= 3 ? '3x' as const : null,
+          })),
+        }));
+        setBars(mapped.length > 0 ? mapped : generateMockBars(basePrice));
+      } catch {
+        if (!cancelled) setBars(generateMockBars(basePrice));
+      }
+    }
+    load();
+    return () => { cancelled = true; };
   }, [instrument, basePrice]);
 
   useEffect(() => {

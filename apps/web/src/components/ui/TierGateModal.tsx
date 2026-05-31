@@ -9,7 +9,8 @@ interface Props {
   onClose: () => void;
 }
 
-export default function TierGateModal({ message, onClose }: Props) {
+export default function TierGateModal({ feature, message, onClose }: Props) {
+  const featureLabel = feature.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
   const router = useRouter();
 
   return (
@@ -29,11 +30,11 @@ export default function TierGateModal({ message, onClose }: Props) {
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
           <Zap size={20} color="#22d3ee" />
-          <h3 style={{ color: '#e6e8ee', fontSize: 16, fontWeight: 600, margin: 0 }}>Pro Feature</h3>
+          <h3 style={{ color: '#e6e8ee', fontSize: 16, fontWeight: 600, margin: 0 }}>Pro Feature — {featureLabel}</h3>
         </div>
 
         <p style={{ color: '#8a8f9b', fontSize: 14, lineHeight: 1.6, marginBottom: 24 }}>
-          {message}
+          {message || `Upgrade to Pro to access ${featureLabel}.`}
         </p>
 
         <div style={{ display: 'flex', gap: 10 }}>
