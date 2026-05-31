@@ -22,13 +22,11 @@ declare module 'next-auth' {
   }
 }
 
-declare module 'next-auth/jwt' {
-  interface JWT {
-    id:                string;
-    tier:              'free' | 'premium';
-    tokenBalanceCents: number;
-  }
-}
+type AuthJwt = {
+  id:                string;
+  tier:              'free' | 'premium';
+  tokenBalanceCents: number;
+};
 
 // ─── Validation ───────────────────────────────────────────────────────────────
 
@@ -82,9 +80,10 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       return token;
     },
     async session({ session, token }) {
-      session.user.id                = token.id;
-      session.user.tier              = token.tier;
-      session.user.tokenBalanceCents = token.tokenBalanceCents;
+      const t = token as unknown as AuthJwt;
+      session.user.id                = t.id;
+      session.user.tier              = t.tier;
+      session.user.tokenBalanceCents = t.tokenBalanceCents;
       return session;
     },
   },

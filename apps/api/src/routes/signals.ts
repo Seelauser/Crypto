@@ -119,11 +119,11 @@ export async function signalsRouter(fastify: FastifyInstance): Promise<void> {
           userId,
           name:                 body.name,
           market:               body.market,
-          triggerConfig:        body.triggerConfig,
+          triggerConfig:        body.triggerConfig as object,
           instruments:          body.instruments ?? [],
           notificationChannels: body.notificationChannels ?? [],
           cooldownMinutes:      body.cooldownMinutes ?? 15,
-          activeHours:          body.activeHours ?? {},
+          activeHours:          (body.activeHours ?? {}) as object,
           status:               'armed',
         },
       });
@@ -165,11 +165,11 @@ export async function signalsRouter(fastify: FastifyInstance): Promise<void> {
         data: {
           ...(body.name                 !== undefined && { name:                 body.name }),
           ...(body.status               !== undefined && { status:               body.status }),
-          ...(body.triggerConfig        !== undefined && { triggerConfig:        body.triggerConfig }),
+          ...(body.triggerConfig        !== undefined && { triggerConfig:        body.triggerConfig as object }),
           ...(body.instruments          !== undefined && { instruments:          body.instruments }),
           ...(body.notificationChannels !== undefined && { notificationChannels: body.notificationChannels }),
           ...(body.cooldownMinutes      !== undefined && { cooldownMinutes:      body.cooldownMinutes }),
-          ...(body.activeHours          !== undefined && { activeHours:          body.activeHours }),
+          ...(body.activeHours          !== undefined && { activeHours:          body.activeHours as object }),
         },
       });
 

@@ -54,7 +54,7 @@ export async function waitForBatch(
   batchId: string,
   pollIntervalMs = 5_000,
   timeoutMs = 300_000,
-): Promise<Anthropic.MessageBatch> {
+): Promise<Awaited<ReturnType<typeof anthropic.messages.batches.retrieve>>> {
   const deadline = Date.now() + timeoutMs;
 
   while (Date.now() < deadline) {
@@ -89,8 +89,8 @@ export async function collectBatchResults(
       const usage: Parameters<typeof computeCostCents>[1] = {
         input_tokens:                msg.usage.input_tokens,
         output_tokens:               msg.usage.output_tokens,
-        cache_creation_input_tokens: (msg.usage as Record<string, number>)['cache_creation_input_tokens'],
-        cache_read_input_tokens:     (msg.usage as Record<string, number>)['cache_read_input_tokens'],
+        cache_creation_input_tokens: msg.usage.cache_creation_input_tokens ?? undefined,
+        cache_read_input_tokens:     msg.usage.cache_read_input_tokens     ?? undefined,
       };
       const costCents = Math.ceil(computeCostCents(req.model, usage) * 0.5); // 50% batch discount
 

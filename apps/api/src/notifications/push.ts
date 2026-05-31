@@ -51,7 +51,7 @@ export async function sendSignalPush(params: {
   await Promise.allSettled(
     subscriptions.map(sub =>
       sendToSubscription(
-        sub.config as webpush.PushSubscription,
+        sub.config as unknown as webpush.PushSubscription,
         JSON.stringify(payload),
         sub.id,
         userId,
@@ -116,7 +116,7 @@ export async function sendDailyRecapPush(params: {
   await Promise.allSettled(
     subscriptions.map(sub =>
       sendToSubscription(
-        sub.config as webpush.PushSubscription,
+        sub.config as unknown as webpush.PushSubscription,
         payload,
         sub.id,
         userId,
@@ -137,7 +137,7 @@ export async function sendTestPush(userId: string, channelId: string): Promise<v
   if (!channel) throw new Error('Push subscription not found');
 
   await sendToSubscription(
-    channel.config as webpush.PushSubscription,
+    channel.config as unknown as webpush.PushSubscription,
     JSON.stringify({
       title: 'OrderFlow — Push notifications active',
       body:  'You\'ll receive signal alerts here.',

@@ -56,6 +56,9 @@ importers:
       stripe:
         specifier: ^17.3.0
         version: 17.7.0
+      web-push:
+        specifier: ^3.6.7
+        version: 3.6.7
       zod:
         specifier: ^3.23.8
         version: 3.25.76
@@ -66,6 +69,9 @@ importers:
       '@types/node':
         specifier: ^22.10.0
         version: 22.19.19
+      '@types/web-push':
+        specifier: ^3.6.3
+        version: 3.6.4
       tsx:
         specifier: ^4.19.0
         version: 4.22.1
@@ -295,6 +301,9 @@ importers:
 
   packages/llm-prompts:
     dependencies:
+      '@anthropic-ai/sdk':
+        specifier: ^0.35.0
+        version: 0.35.0
       '@orderflow/types':
         specifier: workspace:*
         version: link:../types

@@ -52,7 +52,7 @@ export default function DomLadder({ instrument, tier, height = 400 }: Props) {
 
   // Apply real orderbook snapshots from WS when available; fall back to mock drift
   useEffect(() => {
-    if (!lastMessage || lastMessage.channel !== 'market:orderbook') return;
+    if (!lastMessage || lastMessage.type !== 'orderbook') return;
     const data = lastMessage.data as {
       instrument?: string;
       bids?: Array<[number, number]>;

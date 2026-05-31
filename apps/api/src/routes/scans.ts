@@ -125,7 +125,7 @@ export async function scansRouter(fastify: FastifyInstance): Promise<void> {
           userId,
           scope:        body.scope,
           market:       body.market ?? null,
-          filterConfig: body.conditions,
+          filterConfig: body.conditions as unknown as object,
           results:      [],
         },
       });
