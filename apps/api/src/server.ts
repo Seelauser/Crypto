@@ -2,8 +2,8 @@ import Fastify from 'fastify';
 import cors from '@fastify/cors';
 import helmet from '@fastify/helmet';
 import rateLimit from '@fastify/rate-limit';
-import { signalsRouter } from './routes/signals';
-import { scansRouter } from './routes/scans';
+import signalsRouter from './routes/signals';
+import scansRouter from './routes/scans';
 import { notificationsRouter } from './routes/notifications';
 
 const app = Fastify({ logger: { level: process.env.NODE_ENV === 'production' ? 'warn' : 'info' } });

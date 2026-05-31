@@ -84,6 +84,9 @@ importers:
       '@orderflow/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@orderflow/llm-prompts':
+        specifier: workspace:*
+        version: link:../../packages/llm-prompts
       '@orderflow/types':
         specifier: workspace:*
         version: link:../../packages/types
@@ -135,6 +138,9 @@ importers:
       '@tanstack/react-query-devtools':
         specifier: ^5.62.0
         version: 5.100.10(@tanstack/react-query@5.100.10(react@19.2.6))(react@19.2.6)
+      bcryptjs:
+        specifier: ^2.4.3
+        version: 2.4.3
       class-variance-authority:
         specifier: ^0.7.0
         version: 0.7.1
@@ -144,6 +150,9 @@ importers:
       framer-motion:
         specifier: ^11.13.0
         version: 11.18.2(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
+      ioredis:
+        specifier: ^5.4.1
+        version: 5.10.1
       lightweight-charts:
         specifier: ^4.2.0
         version: 4.2.3
@@ -162,6 +171,9 @@ importers:
       react-dom:
         specifier: ^19.0.0
         version: 19.2.6(react@19.2.6)
+      resend:
+        specifier: ^4.0.0
+        version: 4.8.0(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       stripe:
         specifier: ^17.3.0
         version: 17.7.0
@@ -178,6 +190,9 @@ importers:
         specifier: ^5.0.1
         version: 5.0.13(@types/react@19.2.14)(react@19.2.6)(use-sync-external-store@1.6.0(react@19.2.6))
     devDependencies:
+      '@types/bcryptjs':
+        specifier: ^2.4.6
+        version: 2.4.6
       '@types/node':
         specifier: ^22.10.0
         version: 22.19.19

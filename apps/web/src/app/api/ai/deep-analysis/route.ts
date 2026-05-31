@@ -4,7 +4,7 @@ import Redis from 'ioredis';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { buildTierGateError } from '@/lib/limits';
-import { buildDeepAnalysisPrompt } from '@orderflow/llm-prompts/features/deep_analysis_opus';
+import { buildDeepAnalysisPrompt } from '@orderflow/llm-prompts';
 import { z } from 'zod';
 import type { UserTier } from '@orderflow/types';
 

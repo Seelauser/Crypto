@@ -403,9 +403,9 @@ export default async function DashboardPage() {
   ]);
 
   // Flatten watchlist instruments (deduplicated)
-  const watchlistInstruments = [
-    ...new Set(watchlists.flatMap(w => w.instruments)),
-  ];
+  const watchlistInstruments: string[] = Array.from(
+    new Set<string>(watchlists.flatMap((w: { instruments: string[] }) => w.instruments)),
+  );
 
   // Anomaly count placeholder (will come from materialized analytics table)
   const anomalyCount = 0;

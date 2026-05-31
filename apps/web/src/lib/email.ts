@@ -1,6 +1,10 @@
 import { Resend } from 'resend';
 
-const resend = new Resend(process.env.RESEND_API_KEY);
+let _resend: Resend | null = null;
+function resendClient(): Resend {
+  if (!_resend) _resend = new Resend(process.env.RESEND_API_KEY);
+  return _resend;
+}
 const FROM = process.env.EMAIL_FROM ?? 'OrderFlow <notify@orderflow.app>';
 const BASE_URL = process.env.NEXTAUTH_URL ?? 'http://localhost:3000';
 
@@ -11,7 +15,7 @@ export async function sendVerificationEmail(
   userId: string
 ) {
   const link = `${BASE_URL}/api/auth/verify?token=${token}&uid=${userId}`;
-  await resend.emails.send({
+  await resendClient().emails.send({
     from: FROM,
     to: email,
     subject: 'Verify your OrderFlow account',
@@ -36,7 +40,7 @@ export async function sendSignalAlert(params: {
   triggerType: string;
   deepLink: string;
 }) {
-  await resend.emails.send({
+  await resendClient().emails.send({
     from: FROM,
     to: params.email,
     subject: `Signal: ${params.instrument} — ${params.setupName}`,
@@ -61,7 +65,7 @@ export async function sendDailyRecap(params: {
   recap: string;
   date: string;
 }) {
-  await resend.emails.send({
+  await resendClient().emails.send({
     from: FROM,
     to: params.email,
     subject: `Daily Flow Recap — ${params.date}`,

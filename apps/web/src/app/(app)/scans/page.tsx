@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { Play, Loader2, Filter, TrendingUp, TrendingDown } from 'lucide-react';
+import type { UserTier } from '@orderflow/types';
 
 const MARKETS = ['crypto', 'stocks', 'futures', 'forex', 'commodities', 'resources'];
 
@@ -44,7 +45,7 @@ export default function ScansPage() {
   const [results, setResults] = useState<ScanResult[]>([]);
   const [loading, setLoading] = useState(false);
   const [scanCount, setScanCount] = useState(0);
-  const tier = 'free'; // Would come from session in real app
+  const tier: UserTier = 'free'; // Would come from session in real app
 
   function addFilter() {
     setFilters(prev => [...prev, { field: 'cvd', op: 'gt', value: '' }]);

@@ -217,7 +217,6 @@ export default function CvdChart({
         },
         timeScale: {
           borderColor: '#1f2128',
-          textColor: '#8a8f9b',
           timeVisible: true,
           secondsVisible: false,
         },

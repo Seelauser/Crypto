@@ -32,7 +32,7 @@ export async function GET(req: NextRequest) {
     'ai_explanation', 'ai_model',
   ];
 
-  const rows = events.map(e => {
+  const rows = events.map((e: typeof events[number]) => {
     const snap = e.snapshot as Record<string, unknown>;
     const setup = e.setup as { name: string; market: string; triggerConfig: { type: string } } | null;
     return [

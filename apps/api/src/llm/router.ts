@@ -1,5 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk';
-import db from '../db';
+import { db } from '../db';
 
 // ─── Feature / Model Types ────────────────────────────────────────────────────
 // Extended locally to include all spec-defined features. The shared package
@@ -295,10 +295,8 @@ export async function callLlm(
         const streamUsage: LlmUsage = {
           input_tokens:  finalMsg.usage.input_tokens,
           output_tokens: finalMsg.usage.output_tokens,
-          cache_creation_input_tokens:
-            (finalMsg.usage as Record<string, number>)['cache_creation_input_tokens'],
-          cache_read_input_tokens:
-            (finalMsg.usage as Record<string, number>)['cache_read_input_tokens'],
+          cache_creation_input_tokens: finalMsg.usage.cache_creation_input_tokens ?? undefined,
+          cache_read_input_tokens:     finalMsg.usage.cache_read_input_tokens     ?? undefined,
         };
         const costCents = computeCostCents(model, streamUsage);
         await logCall({ userId, feature, model, usage: streamUsage, costCents, batched: batch });
@@ -337,10 +335,8 @@ export async function callLlm(
   const usage: LlmUsage = {
     input_tokens:  response.usage.input_tokens,
     output_tokens: response.usage.output_tokens,
-    cache_creation_input_tokens:
-      (response.usage as Record<string, number>)['cache_creation_input_tokens'],
-    cache_read_input_tokens:
-      (response.usage as Record<string, number>)['cache_read_input_tokens'],
+    cache_creation_input_tokens: response.usage.cache_creation_input_tokens ?? undefined,
+    cache_read_input_tokens:     response.usage.cache_read_input_tokens     ?? undefined,
   };
 
   const responseText = response.content

@@ -67,7 +67,7 @@ async function fetchCvdSeries(instrument: string, limit = 50): Promise<number[]>
       LIMIT ${limit}
     `;
     // Reverse so oldest-first for correlation math
-    return rows.map(r => r.cvd).reverse();
+    return rows.map((r: { cvd: number }) => r.cvd).reverse();
   } catch {
     return [];
   }

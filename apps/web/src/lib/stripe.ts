@@ -1,9 +1,15 @@
 import Stripe from 'stripe';
 
-export const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
-  apiVersion: '2024-11-20.acacia',
-  typescript: true,
-});
+let _stripe: Stripe | null = null;
+export function stripe(): Stripe {
+  if (!_stripe) {
+    _stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
+      apiVersion: '2025-02-24.acacia',
+      typescript: true,
+    });
+  }
+  return _stripe;
+}
 
 export const STRIPE_PRICES = {
   proMonthly: process.env.STRIPE_PRICE_PRO_MONTHLY!,
@@ -18,7 +24,7 @@ export const STRIPE_PRICES = {
 export const MONTHLY_TOKEN_CREDIT_CENTS = 1_000;
 
 export async function createCheckoutSession(userId: string, email: string) {
-  return stripe.checkout.sessions.create({
+  return stripe().checkout.sessions.create({
     mode: 'subscription',
     payment_method_types: ['card'],
     customer_email: email,
@@ -32,7 +38,7 @@ export async function createCheckoutSession(userId: string, email: string) {
 }
 
 export async function createTopUpSession(userId: string, email: string, priceId: string) {
-  return stripe.checkout.sessions.create({
+  return stripe().checkout.sessions.create({
     mode: 'payment',
     payment_method_types: ['card'],
     customer_email: email,
