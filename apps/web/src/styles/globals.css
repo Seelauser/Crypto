@@ -1,0 +1,120 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg: #0a0a0b;
+  --panel: #13141a;
+  --panel-hi: #181a21;
+  --border: #1f2128;
+  --border-hi: #2a2d36;
+  --fg: #e6e8ee;
+  --fg-muted: #8a8f9b;
+  --fg-dim: #5a5f6a;
+  --buy: #22d3ee;
+  --buy-glow: #22d3ee33;
+  --sell: #f97366;
+  --sell-glow: #f9736633;
+  --warn: #fbbf24;
+  --info: #60a5fa;
+  --ok: #22c55e;
+  --danger: #ef4444;
+  --imb-3x: #fbbf24;
+  --imb-10x: #ef4444;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html,
+body {
+  background-color: var(--bg);
+  color: var(--fg);
+  font-family: 'Inter', system-ui, sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  height: 100%;
+}
+
+/* All numeric data uses monospace */
+.tabular,
+.price,
+.volume,
+.delta,
+.ratio {
+  font-family: 'JetBrains Mono', monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Scrollbars — thin, dark */
+::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+::-webkit-scrollbar-track {
+  background: var(--bg);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border-hi);
+  border-radius: 2px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--fg-dim);
+}
+
+/* Buy/sell accent bars */
+.accent-buy {
+  border-left: 3px solid var(--buy);
+}
+.accent-sell {
+  border-left: 3px solid var(--sell);
+}
+
+/* Data quality badges */
+.badge-true-l2 {
+  border: 1px solid var(--buy);
+  color: var(--buy);
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-size: 10px;
+  font-family: 'JetBrains Mono', monospace;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.badge-inferred {
+  border: 1px solid var(--warn);
+  color: var(--warn);
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-size: 10px;
+  font-family: 'JetBrains Mono', monospace;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+/* Footprint imbalance highlights */
+.imbalance-3x {
+  border: 1px solid var(--imb-3x);
+}
+.imbalance-10x {
+  border: 1px solid var(--imb-10x);
+  box-shadow: 0 0 4px var(--imb-10x);
+}
+
+/* Focus ring */
+:focus-visible {
+  outline: 2px solid var(--buy);
+  outline-offset: 2px;
+}
+
+/* Selection */
+::selection {
+  background: var(--buy-glow);
+  color: var(--fg);
+}
