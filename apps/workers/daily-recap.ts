@@ -22,7 +22,17 @@ import type { SignalSnapshot, SweepEvent } from '@orderflow/types';
 
 const db        = new PrismaClient({ log: ['error'] });
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-const resend    = new Resend(process.env.RESEND_API_KEY);
+
+let _resend: Resend | null = null;
+const resend = {
+  get emails() {
+    if (!_resend) {
+      if (!process.env.RESEND_API_KEY) throw new Error('RESEND_API_KEY not configured');
+      _resend = new Resend(process.env.RESEND_API_KEY);
+    }
+    return _resend.emails;
+  },
+};
 
 const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN ?? '';
 const FROM      = process.env.EMAIL_FROM ?? 'OrderFlow <notify@orderflow.app>';
