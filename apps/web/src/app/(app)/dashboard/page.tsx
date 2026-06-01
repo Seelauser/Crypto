@@ -1,6 +1,12 @@
 import { redirect } from 'next/navigation';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
+import redis from '@/lib/redis';
+import { ASSET_CLASSES } from '@/lib/regimes';
+import LiveCvdGrid from '@/components/dashboard/LiveCvdGrid';
+import LiveWatchlistStrip from '@/components/dashboard/LiveWatchlistStrip';
+import DivergenceWidget from '@/components/dashboard/DivergenceWidget';
+import TermTip from '@/components/ui/TermTip';
 
 export const metadata = { title: 'Dashboard' };
 
@@ -249,96 +255,7 @@ function TodaysSignals({ events }: { events: SignalEventRow[] }) {
 
 // --- QuickStats --------------------------------------------------------------
 
-const ASSET_CLASS_COLORS: Record<string, { bg: string; label: string }> = {
-  crypto:      { bg: '#22d3ee', label: 'Crypto' },
-  stocks:      { bg: '#60a5fa', label: 'Stocks' },
-  futures:     { bg: '#a78bfa', label: 'Futures' },
-  forex:       { bg: '#34d399', label: 'Forex' },
-  commodities: { bg: '#fbbf24', label: 'Commodities' },
-  resources:   { bg: '#f97366', label: 'Resources' },
-};
 
-function CvdHeatmapTile({
-  assetClass,
-}: {
-  assetClass: string;
-}) {
-  const meta = ASSET_CLASS_COLORS[assetClass] ?? { bg: '#5a5f6a', label: assetClass };
-
-  return (
-    <div
-      className="flex flex-col items-center justify-center rounded-lg p-3"
-      style={{ backgroundColor: `${meta.bg}18`, border: `1px solid ${meta.bg}30` }}
-    >
-      {/* Direction placeholder — will be driven by WebSocket CVD delta */}
-      <div
-        className="mb-1 h-5 w-5 rounded-full"
-        style={{ backgroundColor: `${meta.bg}40` }}
-        title="CVD direction — live via WebSocket"
-      />
-      <span className="text-[10px] font-medium" style={{ color: meta.bg }}>
-        {meta.label}
-      </span>
-      <span className="mt-0.5 text-[10px] text-[#5a5f6a]">--</span>
-    </div>
-  );
-}
-
-function QuickStats({ anomalyCount }: { anomalyCount: number }) {
-  const assetClasses = Object.keys(ASSET_CLASS_COLORS);
-
-  return (
-    <section className="flex flex-col gap-3 rounded-xl border border-[#1f2128] bg-[#13141a] p-4">
-      <h2 className="text-sm font-semibold text-[#e6e8ee]">CVD Direction</h2>
-
-      <div className="grid grid-cols-3 gap-2">
-        {assetClasses.map(ac => (
-          <CvdHeatmapTile key={ac} assetClass={ac} />
-        ))}
-      </div>
-
-      <p className="text-[10px] text-[#5a5f6a]">
-        Live data via WebSocket — connecting&hellip;
-      </p>
-
-      <div className="mt-1 flex items-center justify-between rounded-lg border border-[#1f2128] bg-[#0a0a0b] px-3 py-2">
-        <span className="text-xs text-[#8a8f9b]">Anomalies (24 h)</span>
-        <span className="text-sm font-semibold tabular-nums text-[#f97366]">
-          {anomalyCount}
-        </span>
-      </div>
-    </section>
-  );
-}
-
-// --- WatchlistStrip ----------------------------------------------------------
-
-function InstrumentChip({ symbol }: { symbol: string }) {
-  return (
-    <div className="flex flex-shrink-0 flex-col items-center justify-center gap-0.5 rounded-lg border border-[#1f2128] bg-[#13141a] px-3 py-1 transition-colors hover:border-[#2a2d36]">
-      <span className="font-mono text-xs font-semibold text-[#e6e8ee]">{symbol}</span>
-      {/* Price placeholder — will be driven by WebSocket tick */}
-      <span className="font-mono text-[10px] text-[#5a5f6a]">--</span>
-    </div>
-  );
-}
-
-function WatchlistStrip({ instruments }: { instruments: string[] }) {
-  const display = instruments.length > 0
-    ? instruments
-    : ['BTC-USDT', 'ETH-USDT', 'SOL-USDT', 'BNB-USDT', 'XRP-USDT', 'AAPL', 'ES1!', 'EUR/USD'];
-
-  return (
-    <section className="flex h-[60px] items-center gap-2 overflow-x-auto rounded-xl border border-[#1f2128] bg-[#13141a] px-4 scrollbar-hide">
-      <span className="mr-1 flex-shrink-0 text-xs font-medium text-[#5a5f6a]">
-        Watchlist
-      </span>
-      {display.map(symbol => (
-        <InstrumentChip key={symbol} symbol={symbol} />
-      ))}
-    </section>
-  );
-}
 
 // --- Upgrade Banner ----------------------------------------------------------
 
@@ -367,48 +284,56 @@ export default async function DashboardPage() {
   const session = await auth();
   if (!session?.user?.id) redirect('/login');
 
-  const userId           = session.user.id;
-  const tier             = (session.user as { tier?: string }).tier ?? 'free';
-  const tokenBalance     = (session.user as { tokenBalanceCents?: number }).tokenBalanceCents ?? 0;
-  const username         = session.user.name ?? session.user.email ?? 'Trader';
-  const since24h         = new Date(Date.now() - 24 * 60 * 60 * 1000);
+  const userId       = session.user.id;
+  const tier         = (session.user as { tier?: string }).tier ?? 'free';
+  const tokenBalance = (session.user as { tokenBalanceCents?: number }).tokenBalanceCents ?? 0;
+  const username     = session.user.name ?? session.user.email ?? 'Trader';
+  const since24h     = new Date(Date.now() - 24 * 60 * 60 * 1000);
 
-  // Parallel data fetches
-  const [signalSetups, todaysEvents, watchlists, tokenLedger] = await Promise.all([
-    // 1. Active signal setups
+  // Parallel data fetches — Redis calls share the module-level singleton.
+  const [signalSetups, todaysEvents, watchlists, tokenLedger, rawRegimes, rawDivergences] = await Promise.all([
     db.signalSetup.findMany({
       where:   { userId, status: { in: ['armed', 'paused'] } },
       orderBy: { createdAt: 'desc' },
     }),
-
-    // 2. Signal events from the last 24 h
     db.signalEvent.findMany({
       where:   { userId, createdAt: { gte: since24h } },
       orderBy: { createdAt: 'desc' },
       take:    50,
       include: { setup: { select: { name: true, market: true } } },
     }),
-
-    // 3. User's watchlists
-    db.watchlist.findMany({
-      where: { userId },
-      take:  5,
-    }),
-
-    // 4. Token balance (fresh from DB for accuracy)
-    db.tokenLedger.findUnique({
-      where:  { userId },
-      select: { balanceCents: true },
-    }),
+    db.watchlist.findMany({ where: { userId }, take: 5 }),
+    db.tokenLedger.findUnique({ where: { userId }, select: { balanceCents: true } }),
+    redis.hgetall('market:regime').catch(() => ({})),
+    redis.lrange('market:divergences', 0, 19).catch(() => [] as string[]),
   ]);
 
-  // Flatten watchlist instruments (deduplicated)
+  // Flatten watchlist instruments
   const watchlistInstruments: string[] = Array.from(
     new Set<string>(watchlists.flatMap((w: { instruments: string[] }) => w.instruments)),
   );
 
-  // Anomaly count placeholder (will come from materialized analytics table)
-  const anomalyCount = 0;
+  // Parse regime data
+  type RegimeDatum = { regime: string; confidence: number; instrument: string; ts: number } | null;
+  const regimes = Object.fromEntries(ASSET_CLASSES.map(ac => [ac, null])) as Record<string, RegimeDatum>;
+  for (const ac of ASSET_CLASSES) {
+    const val = (rawRegimes as Record<string, string> | null)?.[ac];
+    if (val) { try { regimes[ac] = JSON.parse(val); } catch { /* stays null */ } }
+  }
+
+  // Parse divergences for server-side prop (no client-side fetch needed)
+  const divergences = (rawDivergences as string[])
+    .map((e: string) => { try { return JSON.parse(e); } catch { return null; } })
+    .filter(Boolean);
+
+  // Real anomaly count from today's signal events
+  const anomalyCount = todaysEvents.filter((e) => {
+    const snap = e.snapshot as Record<string, unknown> | null;
+    if (!snap || typeof snap !== 'object') return false;
+    const sweepCount = snap['sweep_count'];
+    const largePrint = snap['large_print'];
+    return (typeof sweepCount === 'number' && sweepCount > 0) || largePrint === true;
+  }).length;
 
   // Serialise Prisma results to plain objects (avoids Next.js serialisation warnings)
   const serialisedSetups  = JSON.parse(JSON.stringify(signalSetups))  as SignalSetupRow[];
@@ -433,41 +358,54 @@ export default async function DashboardPage() {
         {/* Upgrade banner for free users */}
         {tier === 'free' && <UpgradeBanner />}
 
-        {/* 3-column grid */}
-        <div
-          className="grid gap-4"
-          style={{
-            gridTemplateColumns: 'repeat(1, 1fr)',
-          }}
-        >
-          {/* Desktop: 3 cols via inline style override — Tailwind's lg:grid-cols-3
-              would need configuration; we apply it safely via inline style so
-              this component is self-contained. */}
-          <style>{`
-            @media (min-width: 1024px) {
-              .dashboard-grid {
-                grid-template-columns: 30% 40% 30%;
-              }
-            }
-          `}</style>
+        {/* ── Main 3-column grid ──────────────────────────────────────────── */}
+        <style>{`
+          @media (min-width: 1024px) {
+            .dashboard-grid { grid-template-columns: 28% 1fr 30%; }
+          }
+          @media (min-width: 1280px) {
+            .dashboard-grid { grid-template-columns: 26% 1fr 28%; }
+          }
+        `}</style>
 
-          <div
-            className="dashboard-grid grid gap-4"
-            style={{ gridColumn: '1 / -1' }}
-          >
-            {/* Left — Active Signals */}
-            <ActiveSignalsPanel setups={serialisedSetups} />
+        <div className="dashboard-grid grid gap-4" style={{ gridTemplateColumns: '1fr' }}>
+          {/* Left — Active Signal Setups */}
+          <ActiveSignalsPanel setups={serialisedSetups} />
 
-            {/* Center — Today's Signals */}
-            <TodaysSignals events={serialisedEvents} />
+          {/* Center — Today's Triggered Signals */}
+          <TodaysSignals events={serialisedEvents} />
 
-            {/* Right — Quick Stats */}
-            <QuickStats anomalyCount={anomalyCount} />
-          </div>
+          {/* Right — Live CVD Direction per asset class (client, WebSocket) */}
+          <LiveCvdGrid regimes={regimes} />
         </div>
 
-        {/* ── Watchlist strip ─────────────────────────────────────────────── */}
-        <WatchlistStrip instruments={watchlistInstruments} />
+        {/* ── Divergence widget (full width below grid) ───────────────────── */}
+        <DivergenceWidget hits={divergences} />
+
+        {/* ── Live watchlist strip ────────────────────────────────────────── */}
+        <LiveWatchlistStrip instruments={watchlistInstruments} />
+
+        {/* ── Anomaly count bar ───────────────────────────────────────────── */}
+        {anomalyCount > 0 && (
+          <div className="flex items-center justify-between rounded-xl border border-[#f97366]/20 bg-[#f97366]/5 px-4 py-3">
+            <div>
+              <p className="text-sm font-semibold text-[#f97366]">
+                {anomalyCount} anomaly event{anomalyCount !== 1 ? 's' : ''} in the last 24 h
+              </p>
+              <p className="text-xs text-[#8a8f9b]">
+                <TermTip term="sweep">Sweeps</TermTip> or{' '}
+                <TermTip term="large_print">large prints</TermTip> detected.{' '}
+                Check the signals feed for details.
+              </p>
+            </div>
+            <a
+              href="/signals"
+              className="flex-shrink-0 rounded-lg border border-[#f97366]/30 bg-[#f97366]/10 px-4 py-2 text-xs font-semibold text-[#f97366] transition-opacity hover:opacity-90"
+            >
+              View signals
+            </a>
+          </div>
+        )}
 
         {/* ── Free-tier inline hints ─────────────────────────────────────── */}
         {tier === 'free' && serialisedSetups.length >= 3 && (

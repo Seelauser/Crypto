@@ -16,10 +16,36 @@ const MARKETS = [
 ];
 
 const TRIGGER_TYPES = [
-  { id: 'cvd_cross', label: 'CVD Threshold Cross', description: 'Triggers when cumulative volume delta crosses a threshold' },
-  { id: 'bid_ask_imbalance', label: 'Bid/Ask Imbalance', description: 'Triggers when imbalance ratio exceeds N×' },
-  { id: 'large_print', label: 'Large Print / Sweep', description: 'Triggers on single print or sweep above notional threshold' },
-  { id: 'absorption', label: 'Absorption', description: 'Price stalls vs heavy volume on one side' },
+  {
+    id: 'cvd_cross',
+    label: 'CVD Threshold Cross',
+    description: 'Fires when the running total of buy volume minus sell volume crosses a level you set.',
+    plainEnglish: 'Good for catching when a market tips from balanced to buyer- or seller-dominated. A CVD cross above +10,000 means 10,000 more units bought than sold in the current session — significant buying interest.',
+  },
+  {
+    id: 'bid_ask_imbalance',
+    label: 'Order Book Imbalance',
+    description: 'Fires when the bid vs ask volume ratio at the top of the book exceeds a multiplier.',
+    plainEnglish: 'If bids are 4× larger than asks, large buyers are queued up and willing to absorb selling. This often precedes upward price moves. The ratio resets as orders are filled or cancelled.',
+  },
+  {
+    id: 'large_print',
+    label: 'Large Print / Sweep',
+    description: 'Fires when a single trade or rapid burst of trades exceeds a USD notional threshold.',
+    plainEnglish: 'Institutions break large orders into pieces to hide their intent — but sometimes a large print slips through. A $500K+ single trade in crypto or $1M+ in stocks is worth watching. Sweeps (multiple levels hit rapidly) signal urgency.',
+  },
+  {
+    id: 'absorption',
+    label: 'Absorption',
+    description: 'Fires when heavy one-sided volume hits the market but price barely moves.',
+    plainEnglish: 'If massive sell orders are hitting the bid but price is holding flat, someone is absorbing all that selling. That someone is usually an institution building a long position. A bullish absorption is one of the highest-conviction order flow signals.',
+  },
+  {
+    id: 'delta_exhaustion',
+    label: 'Delta Exhaustion',
+    description: 'Fires when delta flips sign while price is at a recent high or low.',
+    plainEnglish: 'When price reaches a new high but the delta goes negative in the same bar, buyers have run out. The last buyers committed and there is nobody left to push higher. This is an early warning of a reversal.',
+  },
 ];
 
 const FREE_CHANNELS = ['email', 'browser_push'];
@@ -184,8 +210,11 @@ export default function SignalWizard({ tier, onClose }: Props) {
                       borderRadius: 6, padding: '12px 16px', cursor: 'pointer', textAlign: 'left',
                     }}
                   >
-                    <div style={{ color: '#e6e8ee', fontSize: 13, fontWeight: 500, marginBottom: 2 }}>{t.label}</div>
-                    <div style={{ color: '#8a8f9b', fontSize: 12 }}>{t.description}</div>
+                    <div style={{ color: '#e6e8ee', fontSize: 13, fontWeight: 500, marginBottom: 3 }}>{t.label}</div>
+                    <div style={{ color: '#8a8f9b', fontSize: 12, marginBottom: t.plainEnglish ? 6 : 0 }}>{t.description}</div>
+                    {t.plainEnglish && (
+                      <div style={{ color: '#5a5f6a', fontSize: 11, lineHeight: 1.55 }}>{t.plainEnglish}</div>
+                    )}
                   </button>
                 ))}
               </div>
