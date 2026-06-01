@@ -47,6 +47,8 @@ model User {
   updatedAt     DateTime  @updatedAt @map("updated_at")
 
   subscription         Subscription?
+  couponRedemptions   CouponRedemption[] @relation("couponRedemptions")
+  proAccessGrants     ProAccessGrant[] @relation("proAccessGrants")
   tokenLedger          TokenLedger?
   llmCalls             LlmCall[]
   signalSetups         SignalSetup[]
@@ -223,4 +225,52 @@ model StripeEvent {
   processedAt DateTime @default(now()) @map("processed_at")
 
   @@map("stripe_events")
+}
+
+// Coupon models for pro access grants
+model Coupon {
+  id          String   @id @default(cuid())
+  code        String   @unique
+  discountType String  @map("discount_type") // "fixed_days" | "percentage"
+  discountValue Int    @map("discount_value") // days or percentage
+  maxUses     Int      @map("max_uses")
+  currentUses Int      @default(0) @map("current_uses")
+  expiresAt   DateTime? @map("expires_at")
+  status      String   @default("active") // "active" | "inactive"
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  redemptions CouponRedemption[]
+
+  @@index([code])
+  @@index([status, expiresAt])
+  @@map("coupons")
+}
+
+model CouponRedemption {
+  id        String   @id @default(cuid())
+  couponId  String   @map("coupon_id")
+  userId    String   @map("user_id")
+  redeemedAt DateTime @default(now()) @map("redeemed_at")
+
+  coupon Coupon @relation(fields: [couponId], references: [id], onDelete: Cascade)
+  user   User   @relation("couponRedemptions", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([couponId, userId])
+  @@index([userId, redeemedAt])
+  @@map("coupon_redemptions")
+}
+
+model ProAccessGrant {
+  id        String   @id @default(cuid())
+  userId    String   @unique @map("user_id")
+  expiresAt DateTime @map("expires_at")
+  grantedAt DateTime @default(now()) @map("granted_at")
+  source    String   @default("coupon") // "coupon" | "admin" | "promotion"
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  user User @relation("proAccessGrants", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, expiresAt])
+  @@map("pro_access_grants")
 }

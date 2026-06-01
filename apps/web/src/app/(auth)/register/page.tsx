@@ -3,7 +3,7 @@
 import { useState, useCallback, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { Loader2, Check, X, Eye, EyeOff } from 'lucide-react';
+import { Loader2, Check, X, Eye, EyeOff, AlertCircle } from 'lucide-react';
 
 function useDebounce<T>(value: T, delay: number): T {
   const [debounced, setDebounced] = useState(value);
@@ -119,12 +119,12 @@ export default function RegisterPage() {
     <div className="auth-container">
       <div className="auth-card">
         <div style={{ marginBottom: 28 }}>
-          <h1 style={{ color: '#22d3ee', fontSize: 22, fontWeight: 600, marginBottom: 4 }}>
+          <h1 style={{ color: '#e6e8ee', fontSize: 22, fontWeight: 600, marginBottom: 4 }}>
             Create your account
           </h1>
           <p style={{ color: '#8a8f9b', fontSize: 13 }}>
             Already have one?{' '}
-            <Link href="/login" style={{ color: '#22d3ee', textDecoration: 'none' }}>
+            <Link href="/login" style={{ color: '#22d3ee', textDecoration: 'none', transition: 'opacity 150ms' }} className="link-hover">
               Sign in
             </Link>
           </p>
@@ -192,6 +192,8 @@ export default function RegisterPage() {
                 type="button"
                 className="input-icon btn-ghost"
                 onClick={() => setShowPw(v => !v)}
+                onMouseEnter={e => (e.currentTarget.style.color = '#e6e8ee')}
+                onMouseLeave={e => (e.currentTarget.style.color = '#8a8f9b')}
                 tabIndex={-1}
               >
                 {showPw ? <EyeOff size={14} /> : <Eye size={14} />}
@@ -240,7 +242,10 @@ export default function RegisterPage() {
           </div>
 
           {error && (
-            <div className="error-box">{error}</div>
+            <div className="error-box">
+              <AlertCircle size={16} style={{ marginRight: 8 }} />
+              {error}
+            </div>
           )}
 
           <button
@@ -283,10 +288,14 @@ export default function RegisterPage() {
           padding: 9px 36px 9px 12px;
           font-size: 13px;
           outline: none;
-          transition: border-color 150ms;
+          transition: border-color 150ms, background-color 150ms, box-shadow 150ms;
           box-sizing: border-box;
         }
-        .input:focus { border-color: #22d3ee; }
+        .input:focus { 
+          border-color: #22d3ee;
+          background-color: #13141a;
+          box-shadow: 0 0 0 2px rgba(34, 211, 238, 0.1);
+        }
         .input-icon {
           position: absolute;
           right: 10px;
@@ -299,6 +308,7 @@ export default function RegisterPage() {
           border: none;
           cursor: pointer;
           padding: 0;
+          transition: color 150ms;
         }
         .btn-ghost { background: none; border: none; cursor: pointer; color: #8a8f9b; }
         .btn-primary {
@@ -314,9 +324,14 @@ export default function RegisterPage() {
           align-items: center;
           justify-content: center;
           gap: 8px;
-          transition: opacity 150ms;
+          transition: opacity 150ms, transform 150ms;
           margin-top: 4px;
+          width: 100%;
+          text-transform: uppercase;
+          letter-spacing: 0.05em;
         }
+        .btn-primary:hover:not(:disabled) { opacity: 0.9; transform: translateY(-1px); }
+        .btn-primary:active:not(:disabled) { transform: translateY(0); }
         .btn-primary:disabled { opacity: 0.4; cursor: not-allowed; }
         .error-box {
           background: #ef444415;
@@ -325,9 +340,14 @@ export default function RegisterPage() {
           padding: 10px 12px;
           font-size: 13px;
           color: #ef4444;
+          display: flex;
+          align-items: center;
         }
+        .link-hover { opacity: 1; }
+        .link-hover:hover { opacity: 0.8; }
         .spin { animation: spin 600ms linear infinite; }
         @keyframes spin { to { transform: rotate(360deg); } }
+        @media (max-width: 640px) { .auth-card { padding: 24px; } }
       `}</style>
     </div>
   );

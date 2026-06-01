@@ -44,7 +44,7 @@ export default function SettingsPage() {
   }
 
   return (
-    <div style={{ padding: 24, maxWidth: 700, margin: '0 auto' }}>
+    <div style={{ padding: 'clamp(12px, 4vw, 24px)', maxWidth: 700, margin: '0 auto' }}>
       <h1 style={{ fontSize: 20, fontWeight: 600, color: '#e6e8ee', marginBottom: 24 }}>Settings</h1>
 
       {/* Profile section */}

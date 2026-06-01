@@ -51,7 +51,7 @@ export default function SignalsClient({ setups, recentEvents, tier }: Props) {
   }
 
   return (
-    <div style={{ padding: '24px', maxWidth: 1200, margin: '0 auto' }}>
+    <div style={{ padding: 'clamp(12px, 4vw, 24px)', maxWidth: 1200, margin: '0 auto' }}>
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24 }}>
         <div>
@@ -80,7 +80,7 @@ export default function SignalsClient({ setups, recentEvents, tier }: Props) {
         </button>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 20 }}>
         {/* Signal Setups */}
         <div>
           <h2 style={{ fontSize: 13, color: '#8a8f9b', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 12 }}>

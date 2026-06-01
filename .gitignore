@@ -41,3 +41,4 @@ apps/web/.next/
 apps/api/dist/
 apps/ws-gateway/dist/
 apps/workers/dist/
+.claude/

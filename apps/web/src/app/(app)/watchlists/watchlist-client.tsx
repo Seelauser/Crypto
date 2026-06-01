@@ -58,7 +58,7 @@ export default function WatchlistClient({ watchlists: initial, tier }: { watchli
   }
 
   return (
-    <div style={{ padding: 24, maxWidth: 900, margin: '0 auto' }}>
+    <div style={{ padding: 'clamp(12px, 4vw, 24px)', maxWidth: 900, margin: '0 auto' }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24 }}>
         <h1 style={{ fontSize: 20, fontWeight: 600, color: '#e6e8ee', margin: 0 }}>Watchlists</h1>
         <button onClick={createWatchlist} disabled={creating}

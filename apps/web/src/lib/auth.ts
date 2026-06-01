@@ -31,13 +31,14 @@ type AuthJwt = {
 // ─── Validation ───────────────────────────────────────────────────────────────
 
 const loginSchema = z.object({
-  email:    z.string().email(),
+  username: z.string().min(3),
   password: z.string().min(1),
 });
 
 // ─── Auth config ──────────────────────────────────────────────────────────────
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
+  trustHost: true,
   adapter: PrismaAdapter(db) as ReturnType<typeof PrismaAdapter>,
   session: { strategy: 'jwt' },
   pages: {
@@ -51,7 +52,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         if (!parsed.success) return null;
 
         const user = await db.user.findUnique({
-          where:   { email: parsed.data.email },
+          where:   { username: parsed.data.username },
           include: { tokenLedger: true },
         });
         if (!user) return null;
@@ -71,11 +72,14 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     }),
   ],
   callbacks: {
-    async jwt({ token, user }) {
+    async jwt({ token, user, trigger, session }) {
       if (user) {
         token.id                = user.id!;
         token.tier              = user.tier;
         token.tokenBalanceCents = user.tokenBalanceCents;
+      }
+      if (trigger === 'update' && (session as any)?.tier) {
+        token.tier = (session as any).tier;
       }
       return token;
     },

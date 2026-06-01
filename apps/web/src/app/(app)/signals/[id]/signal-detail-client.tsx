@@ -74,7 +74,7 @@ export default function SignalDetailClient({ setup: initial, events: initialEven
   };
 
   return (
-    <div style={{ padding: 24, maxWidth: 900, margin: '0 auto' }}>
+    <div style={{ padding: 'clamp(12px, 4vw, 24px)', maxWidth: 900, margin: '0 auto' }}>
       {/* Breadcrumb */}
       <Link href="/signals" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, color: '#8a8f9b', fontSize: 13, textDecoration: 'none', marginBottom: 20 }}>
         <ArrowLeft size={14} /> All Signals
