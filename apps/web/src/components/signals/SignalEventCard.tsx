@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { Sparkles, Loader2, TrendingUp, TrendingDown, ChevronDown, ChevronUp } from 'lucide-react';
 import type { UserTier } from '@orderflow/types';
 import { Badge } from '@/components/ui/Badge';
+import TermTip from '@/components/ui/TermTip';
 
 interface SignalEvent {
   id: string;
@@ -29,13 +30,13 @@ interface Props {
   tier: UserTier;
 }
 
-const TRIGGER_LABELS: Record<string, string> = {
-  cvd_cross: 'CVD Cross',
-  bid_ask_imbalance: 'Bid/Ask Imbalance',
-  large_print: 'Large Print',
-  sweep: 'Sweep',
-  absorption: 'Absorption',
-  iceberg: 'Iceberg',
+const TRIGGER_LABELS: Record<string, { label: string; tip: string }> = {
+  cvd_cross:         { label: 'CVD Cross',      tip: 'CVD crossed your threshold — net buying or selling pressure reached a significant level.' },
+  bid_ask_imbalance: { label: 'Book Imbalance', tip: 'The order book became lopsided — one side has much more volume waiting than the other.' },
+  large_print:       { label: 'Large Print',    tip: 'A single unusually large trade was detected — a potential institutional footprint.' },
+  sweep:             { label: 'Sweep',          tip: 'Aggressive orders consumed multiple price levels — someone wanted in or out immediately.' },
+  absorption:        { label: 'Absorption',     tip: 'Heavy one-sided volume hit the market but price barely moved — the other side absorbed all of it.' },
+  iceberg:           { label: 'Iceberg',        tip: 'Repeated same-size orders at one price — a large hidden order revealing itself in small chunks.' },
 };
 
 export default function SignalEventCard({ event, tier }: Props) {
@@ -78,7 +79,7 @@ export default function SignalEventCard({ event, tier }: Props) {
     }
   }
 
-  const triggerLabel = TRIGGER_LABELS[snap.triggerType] ?? snap.triggerType;
+  const triggerMeta = TRIGGER_LABELS[snap.triggerType] ?? { label: snap.triggerType, tip: '' };
   const cvdDir = (snap.cvd ?? 0) >= 0 ? 'buy' : 'sell';
 
   return (
@@ -102,28 +103,30 @@ export default function SignalEventCard({ event, tier }: Props) {
             <Badge variant={isCrypto ? 'true-l2' : 'inferred'}>
               {isCrypto ? 'True L2' : 'Inferred'}
             </Badge>
-            <Badge variant="neutral">{triggerLabel}</Badge>
+            <span title={triggerMeta.tip} style={{ cursor: 'help' }}>
+              <Badge variant="neutral">{triggerMeta.label}</Badge>
+            </span>
             {event.setup && (
               <span style={{ fontSize: 11, color: '#5a5f6a' }}>{event.setup.name}</span>
             )}
           </div>
 
-          {/* Metrics row */}
+          {/* Metrics row — each label has a TermTip so any user can understand */}
           <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
             <Metric label="Price" value={`${snap.price?.toFixed(snap.price > 100 ? 2 : 5) ?? '—'}`} />
             <Metric
-              label="CVD"
+              label={<TermTip term="cvd">CVD</TermTip>}
               value={`${snap.cvd >= 0 ? '+' : ''}${((snap.cvd ?? 0) / 1000).toFixed(0)}K`}
               color={snap.cvd >= 0 ? '#22d3ee' : '#f97366'}
               icon={snap.cvd >= 0 ? <TrendingUp size={10} /> : <TrendingDown size={10} />}
             />
             <Metric
-              label="Δ"
+              label={<TermTip term="delta">Delta</TermTip>}
               value={`${snap.delta >= 0 ? '+' : ''}${((snap.delta ?? 0) / 1000).toFixed(0)}K`}
               color={snap.delta >= 0 ? '#22d3ee' : '#f97366'}
             />
             <Metric
-              label="Imb"
+              label={<TermTip term="imbalance_ratio">Imbalance</TermTip>}
               value={`${snap.imbalanceRatio?.toFixed(1) ?? '—'}×`}
               color={snap.imbalanceRatio >= 10 ? '#ef4444' : snap.imbalanceRatio >= 3 ? '#fbbf24' : '#8a8f9b'}
             />
@@ -199,7 +202,7 @@ export default function SignalEventCard({ event, tier }: Props) {
   );
 }
 
-function Metric({ label, value, color, icon }: { label: string; value: string; color?: string; icon?: React.ReactNode }) {
+function Metric({ label, value, color, icon }: { label: React.ReactNode; value: string; color?: string; icon?: React.ReactNode }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
       <span style={{ fontSize: 9, color: '#5a5f6a', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{label}</span>
