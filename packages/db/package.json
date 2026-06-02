@@ -3,8 +3,10 @@
   "version": "0.0.1",
   "private": true,
   "scripts": {
-    "db:migrate": "prisma migrate dev",
-    "db:migrate:prod": "prisma migrate deploy",
+    "db:migrate": "prisma migrate dev && pnpm db:timescale",
+    "db:migrate:prod": "prisma migrate deploy && pnpm db:timescale",
+    "db:push": "prisma db push && pnpm db:timescale",
+    "db:timescale": "node -e \"const u=new URL(process.env.DATABASE_URL);require('child_process').execFileSync('psql',['-v','ON_ERROR_STOP=1','-h',u.hostname,'-p',u.port||'5432','-U',u.username,'-d',u.pathname.slice(1),'-f','prisma/timescale.sql'],{stdio:'inherit',env:{...process.env,PGPASSWORD:decodeURIComponent(u.password)}})\"",
     "db:seed": "tsx src/seed.ts",
     "db:studio": "prisma studio",
     "generate": "prisma generate",
