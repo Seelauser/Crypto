@@ -9,13 +9,16 @@ import { REGIME_META } from '@/lib/regimes';
 // ─── Per-asset CVD state ──────────────────────────────────────────────────────
 
 // Representative instrument per asset class — the one whose CVD drives the tile.
-const CLASS_LEAD: Record<string, string> = {
-  crypto:      'BTC-USDT',
-  stocks:      'AAPL',
-  futures:     'ES1!',
-  forex:       'EUR/USD',
-  commodities: 'GC1!',   // Gold futures
-  resources:   'CL1!',   // WTI crude
+// Symbol form must match what the streaming worker publishes on market:cvd_update
+// (raw exchange symbol, e.g. BTCUSDT not BTC-USDT). null → no ingest worker yet,
+// tile renders an honest "ingest pending" state instead of a permanent "--".
+const CLASS_LEAD: Record<string, string | null> = {
+  crypto:      'BTCUSDT',
+  stocks:      null,
+  futures:     null,
+  forex:       null,
+  commodities: null,
+  resources:   null,
 };
 
 const CLASS_COLOR: Record<string, string> = {
@@ -38,9 +41,11 @@ function CvdTile({
   assetClass: string;
   regime: { regime: string; confidence: number } | null;
 }) {
-  const instrument = CLASS_LEAD[assetClass] ?? 'BTC-USDT';
+  const instrument = CLASS_LEAD[assetClass];
   const color       = CLASS_COLOR[assetClass] ?? '#5a5f6a';
-  const cvdPoints   = useCvdStream(instrument);
+  // Subscribe with a placeholder when no ingest exists so the hook is stable.
+  const cvdPoints   = useCvdStream(instrument ?? '__disabled__');
+  const hasIngest   = instrument !== null;
 
   // Net delta over the last 20 CVD points — a short-term directional bias
   const recentDelta = (() => {
@@ -101,7 +106,15 @@ function CvdTile({
       </div>
 
       {/* Regime chip — with plain-language tooltip */}
-      {regimeMeta ? (
+      {!hasIngest ? (
+        <div
+          className="rounded-full px-2 py-0.5 text-center text-[9px] text-[#5a5f6a] cursor-help"
+          style={{ border: '1px solid #1f2128' }}
+          title="No ingest worker configured for this asset class yet. Crypto is live via Binance/Coinbase/Kraken; stocks/futures/forex/commodities require Alpaca/OANDA/Polygon API keys."
+        >
+          ingest pending
+        </div>
+      ) : regimeMeta ? (
         <div
           className="rounded-full px-2 py-0.5 text-center text-[9px] font-semibold cursor-help"
           style={{ backgroundColor: `${regimeMeta.color}18`, color: regimeMeta.color, border: `1px solid ${regimeMeta.color}30` }}
@@ -111,7 +124,7 @@ function CvdTile({
         </div>
       ) : (
         <div className="rounded-full px-2 py-0.5 text-center text-[9px] text-[#5a5f6a]" style={{ border: '1px solid #1f2128' }}>
-          no regime data
+          warming up
         </div>
       )}
     </div>
