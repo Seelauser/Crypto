@@ -325,8 +325,18 @@ async function handleSignalTriggered(raw: string): Promise<void> {
 
   const tier = user.tier as 'free' | 'premium';
 
-  // b & c. Generate AI explanation
-  const aiResult = await generateExplanation(user_id, tier, snapshot, setup.name);
+  // b & c. Generate AI explanation. The prompt builders crash on snapshots
+  // missing optional numeric fields, and Anthropic calls can fail when no
+  // ANTHROPIC_API_KEY is set — catch everything so a transient AI failure
+  // never prevents the event from being persisted + dispatched.
+  let aiResult: Awaited<ReturnType<typeof generateExplanation>> = null;
+  try {
+    if (process.env.ANTHROPIC_API_KEY) {
+      aiResult = await generateExplanation(user_id, tier, snapshot, setup.name);
+    }
+  } catch (err) {
+    console.error('[dispatcher] generateExplanation failed (continuing without AI):', err);
+  }
   const explanation = aiResult?.explanation ?? `Signal triggered on ${instrument} — ${setup.name}.`;
   const aiModel     = aiResult?.model ?? null;
   const aiCostCents = aiResult?.costCents ?? 0;

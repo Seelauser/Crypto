@@ -1,9 +1,15 @@
 import { Resend } from 'resend';
 
 let _resend: Resend | null = null;
-function resendClient(): Resend {
-  if (!_resend) _resend = new Resend(process.env.RESEND_API_KEY);
+function resendClient(): Resend | null {
+  if (_resend) return _resend;
+  const key = process.env.RESEND_API_KEY;
+  if (!key) return null;
+  _resend = new Resend(key);
   return _resend;
+}
+export function isEmailEnabled(): boolean {
+  return !!process.env.RESEND_API_KEY;
 }
 const FROM = process.env.EMAIL_FROM ?? 'OrderFlow <notify@orderflow.app>';
 const BASE_URL = process.env.NEXTAUTH_URL ?? 'http://localhost:3000';
@@ -14,8 +20,15 @@ export async function sendVerificationEmail(
   token: string,
   userId: string
 ) {
+  const client = resendClient();
+  if (!client) {
+    console.warn(
+      `[email] RESEND_API_KEY missing — verification email for ${email} not sent.`,
+    );
+    return;
+  }
   const link = `${BASE_URL}/api/auth/verify?token=${token}&uid=${userId}`;
-  await resendClient().emails.send({
+  await client.emails.send({
     from: FROM,
     to: email,
     subject: 'Verify your OrderFlow account',
@@ -40,7 +53,12 @@ export async function sendSignalAlert(params: {
   triggerType: string;
   deepLink: string;
 }) {
-  await resendClient().emails.send({
+  const client = resendClient();
+  if (!client) {
+    console.warn(`[email] RESEND_API_KEY missing — signal alert for ${params.email} not sent.`);
+    return;
+  }
+  await client.emails.send({
     from: FROM,
     to: params.email,
     subject: `Signal: ${params.instrument} — ${params.setupName}`,
@@ -65,7 +83,12 @@ export async function sendDailyRecap(params: {
   recap: string;
   date: string;
 }) {
-  await resendClient().emails.send({
+  const client = resendClient();
+  if (!client) {
+    console.warn(`[email] RESEND_API_KEY missing — daily recap for ${params.email} not sent.`);
+    return;
+  }
+  await client.emails.send({
     from: FROM,
     to: params.email,
     subject: `Daily Flow Recap — ${params.date}`,

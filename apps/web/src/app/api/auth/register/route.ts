@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import bcrypt from 'bcryptjs';
 import { z } from 'zod';
 import { db } from '@/lib/db';
-import { sendVerificationEmail } from '@/lib/email';
+import { sendVerificationEmail, isEmailEnabled } from '@/lib/email';
 import crypto from 'crypto';
 
 const registerSchema = z.object({
@@ -65,20 +65,36 @@ export async function POST(req: NextRequest) {
   const passwordHash = await bcrypt.hash(password, 12);
   const verificationToken = crypto.randomBytes(32).toString('hex');
 
+  // Without an email provider configured we cannot deliver a verification
+  // link, so leaving the account in `pending_verification` would lock the
+  // user out forever. Activate immediately in that case — the email gate
+  // re-engages automatically the moment a Resend key is added.
+  const emailEnabled = isEmailEnabled();
+  const initialStatus = emailEnabled ? 'pending_verification' : 'active';
+
   const user = await db.user.create({
     data: {
       username,
       email,
       passwordHash,
-      status: 'pending_verification',
+      status: initialStatus,
       tier: 'free',
       tokenLedger: { create: { balanceCents: 0 } },
     },
   });
 
-  // Store verification token in DB (simplified: store in user metadata or separate table)
-  // For MVP we send the token directly; production should use a VerificationToken table
-  await sendVerificationEmail(email, username, verificationToken, user.id);
+  if (emailEnabled) {
+    try {
+      await sendVerificationEmail(email, username, verificationToken, user.id);
+    } catch (err) {
+      console.error('[register] sendVerificationEmail failed:', err);
+      // Don't kill registration — the user is already created. They can
+      // request a re-send later via /api/auth/resend (TODO).
+    }
+  }
 
-  return NextResponse.json({ ok: true, message: 'Check your email to verify your account.' }, { status: 201 });
+  const message = emailEnabled
+    ? 'Check your email to verify your account.'
+    : 'Account created. You can sign in now.';
+  return NextResponse.json({ ok: true, message }, { status: 201 });
 }
