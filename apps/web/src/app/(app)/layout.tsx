@@ -14,9 +14,16 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   };
 
   return (
-    <div style={{ display: 'flex', height: '100vh', background: '#0a0a0b', overflow: 'hidden' }}>
+    // 100dvh (dynamic viewport height) avoids iOS Safari's 100vh
+    // miscalculation when the URL bar shows/hides. On mobile the layout
+    // is a column (sticky top-bar above main); on desktop it's a row
+    // (sidebar left of main).
+    <div
+      className="flex flex-col md:flex-row bg-bg overflow-hidden"
+      style={{ height: '100dvh' }}
+    >
       <AppNav user={user} />
-      <main style={{ flex: 1, overflow: 'auto', display: 'flex', flexDirection: 'column' }}>
+      <main className="flex flex-1 flex-col overflow-auto">
         {children}
       </main>
     </div>

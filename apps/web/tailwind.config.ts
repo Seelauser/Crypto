@@ -1,4 +1,5 @@
 import type { Config } from 'tailwindcss';
+import containerQueries from '@tailwindcss/container-queries';
 
 const config: Config = {
   darkMode: ['class'],
@@ -60,6 +61,11 @@ const config: Config = {
         '4': '16px',
         '5': '20px',
         '6': '24px',
+        // Tap-target sizes — Apple HIG / WCAG minimum is 44px / 24px.
+        'tap-min': '44px',
+        // iOS notch + home-indicator safe-area helpers
+        'safe-top': 'env(safe-area-inset-top)',
+        'safe-bottom': 'env(safe-area-inset-bottom)',
       },
       keyframes: {
         'flash-buy': {
@@ -82,7 +88,7 @@ const config: Config = {
       },
     },
   },
-  plugins: [],
+  plugins: [containerQueries],
 };
 
 export default config;

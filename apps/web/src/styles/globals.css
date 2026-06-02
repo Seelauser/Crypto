@@ -40,6 +40,30 @@ body {
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
   height: 100%;
+  /* Avoid iOS Safari's auto-zoom on input focus when font-size < 16px */
+  -webkit-text-size-adjust: 100%;
+}
+
+/* Inputs ≥ 16px on mobile so iOS does not zoom on focus. */
+@media (max-width: 768px) {
+  input,
+  select,
+  textarea {
+    font-size: 16px;
+  }
+}
+
+/* Design-system body classes (set by /design-system/shared/device-detect.js):
+   - body.device-ios     → Liquid Glass bundle loads
+   - body.device-android → Material 3 bundle loads
+   - body.device-desktop → nothing
+   Project-specific touch-target bumps live here so mobile gets 44pt taps
+   even before the design-system bundle injects its own. */
+body.device-ios button,
+body.device-ios a[role="button"],
+body.device-android button,
+body.device-android a[role="button"] {
+  min-height: 44px;
 }
 
 /* All numeric data uses monospace */

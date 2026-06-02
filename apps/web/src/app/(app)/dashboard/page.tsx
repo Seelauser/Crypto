@@ -67,38 +67,39 @@ function DashboardHeader({
   const balanceDollars = (tokenBalanceCents / 100).toFixed(2);
 
   return (
-    <header className="flex items-center justify-between border-b border-[#1f2128] bg-[#13141a] px-6 py-4">
-      <div className="flex items-center gap-3">
+    <header className="flex flex-wrap items-center justify-between gap-2 border-b border-[#1f2128] bg-[#13141a] px-4 py-3 sm:px-6 sm:py-4">
+      <div className="flex items-center gap-3 min-w-0">
         {/* Avatar placeholder */}
-        <div className="flex h-9 w-9 items-center justify-center rounded-full bg-[#1f2128] text-sm font-semibold text-[#e6e8ee]">
+        <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-[#1f2128] text-sm font-semibold text-[#e6e8ee]">
           {username.charAt(0).toUpperCase()}
         </div>
-        <div>
-          <p className="text-sm font-semibold text-[#e6e8ee]">{username}</p>
-          <p className="text-xs text-[#8a8f9b]">OrderFlow Analytics</p>
+        <div className="min-w-0">
+          <p className="truncate text-sm font-semibold text-[#e6e8ee]">{username}</p>
+          <p className="hidden sm:block text-xs text-[#8a8f9b]">OrderFlow Analytics</p>
         </div>
         <TierBadge tier={tier} />
       </div>
 
-      <div className="flex items-center gap-4">
+      <div className="flex items-center gap-2 sm:gap-4">
         {tier === 'premium' && (
           <div className="flex items-center gap-2 rounded-lg border border-[#1f2128] bg-[#0a0a0b] px-3 py-1.5">
-            <span className="text-xs text-[#8a8f9b]">AI Credits</span>
+            <span className="hidden sm:inline text-xs text-[#8a8f9b]">AI Credits</span>
             <span className="text-sm font-semibold tabular-nums text-[#22d3ee]">
               ${balanceDollars}
             </span>
           </div>
         )}
 
+        {/* Quick-nav links — sidebar/drawer already exposes these, hide on mobile */}
         <a
           href="/signals"
-          className="rounded-lg border border-[#1f2128] bg-[#0a0a0b] px-3 py-1.5 text-xs text-[#8a8f9b] transition-colors hover:border-[#2a2d36] hover:text-[#e6e8ee]"
+          className="hidden sm:inline-block rounded-lg border border-[#1f2128] bg-[#0a0a0b] px-3 py-1.5 text-xs text-[#8a8f9b] transition-colors hover:border-[#2a2d36] hover:text-[#e6e8ee]"
         >
           Signals
         </a>
         <a
           href="/scans"
-          className="rounded-lg border border-[#1f2128] bg-[#0a0a0b] px-3 py-1.5 text-xs text-[#8a8f9b] transition-colors hover:border-[#2a2d36] hover:text-[#e6e8ee]"
+          className="hidden sm:inline-block rounded-lg border border-[#1f2128] bg-[#0a0a0b] px-3 py-1.5 text-xs text-[#8a8f9b] transition-colors hover:border-[#2a2d36] hover:text-[#e6e8ee]"
         >
           Scans
         </a>
@@ -387,8 +388,8 @@ export default async function DashboardPage() {
 
         {/* ── Anomaly count bar ───────────────────────────────────────────── */}
         {anomalyCount > 0 && (
-          <div className="flex items-center justify-between rounded-xl border border-[#f97366]/20 bg-[#f97366]/5 px-4 py-3">
-            <div>
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[#f97366]/20 bg-[#f97366]/5 px-4 py-3">
+            <div className="min-w-0 flex-1">
               <p className="text-sm font-semibold text-[#f97366]">
                 {anomalyCount} anomaly event{anomalyCount !== 1 ? 's' : ''} in the last 24 h
               </p>

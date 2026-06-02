@@ -151,7 +151,7 @@ export default function LiveCvdGrid({ regimes }: { regimes: RegimeMap }) {
         <span className="text-[10px] text-[#5a5f6a]">live</span>
       </div>
 
-      <div className="grid grid-cols-3 gap-2">
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
         {assetClasses.map(ac => (
           <CvdTile key={ac} assetClass={ac} regime={regimes[ac] ?? null} />
         ))}
