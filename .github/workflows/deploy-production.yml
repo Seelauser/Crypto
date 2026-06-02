@@ -1,0 +1,63 @@
+name: Deploy to Production
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: production-deploy
+  cancel-in-progress: false   # never cancel mid-deploy
+
+jobs:
+  deploy:
+    name: Deploy to orderflow-beast.com
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host:        ${{ secrets.DEPLOY_HOST }}
+          username:    ${{ secrets.DEPLOY_USER }}
+          key:         ${{ secrets.DEPLOY_SSH_KEY }}
+          port:        ${{ secrets.DEPLOY_PORT || 22 }}
+          script_stop: true
+          script: |
+            set -euo pipefail
+            cd ${{ secrets.DEPLOY_PATH }}
+
+            echo "==> Pulling latest code"
+            git fetch origin main
+            git reset --hard origin/main
+
+            echo "==> Generating Prisma client"
+            docker compose -f infra/docker-compose.prod.yml run --rm --no-deps \
+              -e DATABASE_URL="$DATABASE_URL" web \
+              sh -c "cd /app && npx prisma generate" 2>/dev/null || true
+
+            echo "==> Running DB migrations"
+            docker compose -f infra/docker-compose.prod.yml run --rm --no-deps \
+              -e DATABASE_URL="$DATABASE_URL" web \
+              sh -c "npx prisma migrate deploy" 2>/dev/null || true
+
+            echo "==> Building and restarting services"
+            docker compose -f infra/docker-compose.prod.yml up --build -d \
+              --remove-orphans
+
+            echo "==> Waiting for web to be healthy"
+            for i in $(seq 1 30); do
+              if docker compose -f infra/docker-compose.prod.yml ps web \
+                   | grep -q "healthy\|running"; then
+                echo "  web is up after ${i}s"
+                break
+              fi
+              sleep 2
+            done
+
+            echo "==> Pruning old images"
+            docker image prune -f --filter "until=24h"
+
+            echo "==> Deploy complete"
+            docker compose -f infra/docker-compose.prod.yml ps
