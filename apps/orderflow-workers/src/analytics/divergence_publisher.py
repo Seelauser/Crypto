@@ -35,14 +35,13 @@ load_dotenv()
 
 logger = logging.getLogger(__name__)
 
-# Instruments to scan for divergences. In production, this would come from
-# a DB query of all instruments with recent tick data.
+# Instruments to scan for divergences. Normalised symbol form (no slash)
+# matches what binance.py publishes via _normalize_symbol(). Add more as
+# ingest workers come online (Coinbase, Kraken).
 TRACKED_INSTRUMENTS = [
-    ("BTC-USDT", "binance"),
-    ("ETH-USDT", "binance"),
-    ("SOL-USDT", "binance"),
-    ("BNB-USDT", "binance"),
-    ("XRP-USDT", "binance"),
+    ("BTCUSDT", "binance"),
+    ("ETHUSDT", "binance"),
+    ("SOLUSDT", "binance"),
 ]
 
 # How many bars of history to use for divergence detection.
@@ -179,10 +178,10 @@ async def run_divergence_loop(
 async def main() -> None:
     db_url    = os.getenv("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/orderflow")
     redis_url = os.getenv("REDIS_URL",    "redis://localhost:6379")
+    interval  = int(os.getenv("DIVERGENCE_SCAN_INTERVAL_SECONDS", "120"))
 
-    logger.info("Starting divergence scan…")
-    await run_divergence_scan(db_url, redis_url)
-    logger.info("Divergence scan complete.")
+    logger.info("Starting divergence loop (interval=%ds)…", interval)
+    await run_divergence_loop(db_url, redis_url, interval_seconds=interval)
 
 
 if __name__ == "__main__":

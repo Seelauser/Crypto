@@ -60,6 +60,7 @@ CHANNEL_TICKS = "market:ticks"
 CHANNEL_ORDERBOOK = "market:orderbook"
 CHANNEL_CVD = "market:cvd_update"
 CHANNEL_SWEEP = "market:sweep_detected"
+CHANNEL_LARGE_PRINT = "market:large_print"
 
 CHANNEL_TRIGGERED = "signal:triggered"
 
@@ -366,10 +367,12 @@ class TriggerEvaluator:
         self._redis = aioredis.from_url(self.redis_url, decode_responses=True)
         pubsub = self._redis.pubsub()
 
-        await pubsub.subscribe(CHANNEL_TICKS, CHANNEL_ORDERBOOK, CHANNEL_CVD, CHANNEL_SWEEP)
+        await pubsub.subscribe(
+            CHANNEL_TICKS, CHANNEL_ORDERBOOK, CHANNEL_CVD, CHANNEL_SWEEP, CHANNEL_LARGE_PRINT,
+        )
         logger.info(
             "TriggerEvaluator subscribed to: %s",
-            [CHANNEL_TICKS, CHANNEL_ORDERBOOK, CHANNEL_CVD, CHANNEL_SWEEP],
+            [CHANNEL_TICKS, CHANNEL_ORDERBOOK, CHANNEL_CVD, CHANNEL_SWEEP, CHANNEL_LARGE_PRINT],
         )
 
         try:
@@ -403,6 +406,14 @@ class TriggerEvaluator:
             instrument = self._state_store.apply_cvd_update(msg)
         elif channel == CHANNEL_SWEEP:
             instrument = self._state_store.apply_sweep(msg)
+        elif channel == CHANNEL_LARGE_PRINT:
+            instrument = msg.get("instrument", "")
+            if instrument:
+                self._state_store.add_large_print(instrument, msg)
+                logger.info(
+                    "large_print received: %s $%.0f (side=%s)",
+                    instrument, msg.get("notional_usd", 0), msg.get("side"),
+                )
         else:
             return
 
@@ -428,7 +439,13 @@ class TriggerEvaluator:
                 continue
 
             setup_id = setup.get("id", "unknown")
-            trigger_config: Dict[str, Any] = setup.get("trigger_config", {})
+            # Prisma serialises columns as camelCase. The original code mixed
+            # snake_case ↔ camelCase, leaving triggerConfig always empty and
+            # silently swallowing every signal. Accept both shapes so future
+            # API changes don't re-break this.
+            trigger_config: Dict[str, Any] = (
+                setup.get("triggerConfig") or setup.get("trigger_config") or {}
+            )
 
             try:
                 triggered = await evaluate_trigger(trigger_config, market_state)
@@ -459,19 +476,66 @@ class TriggerEvaluator:
         assert self._redis is not None
 
         setup_id = setup.get("id", "unknown")
-        user_id = setup.get("user_id", "unknown")
-        cooldown_minutes: int = int(setup.get("cooldown_minutes", DEFAULT_COOLDOWN_MINUTES))
+        user_id = setup.get("userId") or setup.get("user_id") or "unknown"
+        cooldown_minutes: int = int(
+            setup.get("cooldownMinutes")
+            or setup.get("cooldown_minutes")
+            or DEFAULT_COOLDOWN_MINUTES
+        )
 
         # Snapshot of the market state at the moment of the trigger.
-        snapshot = {
-            "cvd": market_state.get("cvd"),
-            "delta": market_state.get("delta"),
-            "bid_volume": market_state.get("bid_volume"),
-            "ask_volume": market_state.get("ask_volume"),
-            "imbalance_ratio": market_state.get("imbalance_ratio"),
-            "dominant_side": market_state.get("dominant_side"),
-            "last_price": market_state.get("last_price"),
+        # Field shape matches @orderflow/types SignalSnapshot (camelCase) so
+        # downstream prompt builders / dashboard renderers can read it
+        # without an adapter layer.
+        trigger_config: Dict[str, Any] = (
+            setup.get("triggerConfig") or setup.get("trigger_config") or {}
+        )
+        trigger_type = trigger_config.get("type", "unknown")
+        trigger_params = trigger_config.get("params", {})
+
+        # Pull the most recent supporting event for richer snapshot context.
+        recent_lp: Optional[Dict[str, Any]] = None
+        lps = market_state.get("recent_large_prints", [])
+        if lps:
+            recent_lp = lps[-1]
+        recent_sw: Optional[Dict[str, Any]] = None
+        sws = market_state.get("recent_sweeps", [])
+        if sws:
+            recent_sw = sws[-1]
+
+        ts_ms = int(time.time() * 1000)
+        last_price = market_state.get("last_price") or 0.0
+
+        snapshot: Dict[str, Any] = {
+            "instrument":      instrument,
+            "exchange":        (recent_lp or recent_sw or {}).get("exchange", ""),
+            "ts":              ts_ms,
+            "price":           float(last_price),
+            "triggerType":     trigger_type,
+            "triggerValues":   trigger_params,
+            "cvd":             float(market_state.get("cvd") or 0.0),
+            "delta":           float(market_state.get("delta") or 0.0),
+            "bidVolume":       float(market_state.get("bid_volume") or 0.0),
+            "askVolume":       float(market_state.get("ask_volume") or 0.0),
+            "imbalanceRatio":  float(market_state.get("imbalance_ratio") or 1.0),
+            "dominantSide":    market_state.get("dominant_side", ""),
         }
+        if recent_sw:
+            snapshot["recentSweep"] = {
+                "side":            recent_sw.get("side"),
+                "notionalUsd":     float(recent_sw.get("notional_usd") or 0.0),
+                "levelsConsumed":  int(recent_sw.get("levels_consumed") or 0),
+                "tradeCount":      int(recent_sw.get("trade_count") or 0),
+                "priceStart":      float(recent_sw.get("price_start") or 0.0),
+                "priceEnd":        float(recent_sw.get("price_end") or 0.0),
+            }
+        if recent_lp:
+            snapshot["recentLargePrint"] = {
+                "side":         recent_lp.get("side"),
+                "notionalUsd":  float(recent_lp.get("notional_usd") or 0.0),
+                "price":        float(recent_lp.get("price") or 0.0),
+                "size":         float(recent_lp.get("size") or 0.0),
+            }
 
         event = json.dumps(
             {
@@ -479,7 +543,7 @@ class TriggerEvaluator:
                 "user_id": user_id,
                 "instrument": instrument,
                 "snapshot": snapshot,
-                "ts": int(time.time() * 1000),
+                "ts": ts_ms,
             }
         )
 
