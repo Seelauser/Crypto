@@ -10,7 +10,9 @@
     "test": "turbo run test",
     "db:migrate": "turbo run db:migrate",
     "db:seed": "turbo run db:seed",
-    "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md}\""
+    "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md}\"",
+    "web:build": "bash scripts/web-build.sh",
+    "web:deploy": "bash scripts/web-build.sh --restart"
   },
   "devDependencies": {
     "turbo": "^2.3.0",
