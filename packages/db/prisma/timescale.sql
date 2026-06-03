@@ -46,6 +46,7 @@ CREATE TABLE IF NOT EXISTS ohlcv_bars (
 SELECT create_hypertable('ohlcv_bars', 'ts', if_not_exists => TRUE, chunk_time_interval => INTERVAL '7 days');
 CREATE INDEX IF NOT EXISTS ohlcv_bars_instrument_tf_ts ON ohlcv_bars (instrument, timeframe, ts DESC);
 
--- Retention policies (keep 90 days of raw ticks, 1 year of OHLCV)
+-- Retention policies (keep 90 days of raw ticks, 1 year of OHLCV, 14 days of OB)
 SELECT add_retention_policy('market_ticks', INTERVAL '90 days', if_not_exists => TRUE);
 SELECT add_retention_policy('ohlcv_bars', INTERVAL '365 days', if_not_exists => TRUE);
+SELECT add_retention_policy('order_book_snapshots', INTERVAL '14 days', if_not_exists => TRUE);

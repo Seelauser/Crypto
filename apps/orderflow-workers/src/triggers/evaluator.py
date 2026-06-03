@@ -65,7 +65,7 @@ CHANNEL_LARGE_PRINT = "market:large_print"
 CHANNEL_TRIGGERED = "signal:triggered"
 
 # How long (seconds) to cache active setups from the DB before re-fetching.
-SETUP_CACHE_TTL = 30.0
+SETUP_CACHE_TTL = 5.0
 
 # Default cooldown if a setup does not specify one (minutes).
 DEFAULT_COOLDOWN_MINUTES = 5
