@@ -150,3 +150,89 @@ SELECT add_continuous_aggregate_policy('ohlcv_1h',
   end_offset        => INTERVAL '15 minutes',
   schedule_interval => INTERVAL '1 hour',
   if_not_exists     => TRUE);
+
+-- ──────────────────────────────────────────────────────────────────────────────
+-- Phase 1.3–1.6 — additive hypertables for Phase 3 ingest workers
+--
+-- These tables stay empty until the corresponding Phase 3 worker ships
+-- (footprint-builder, coinglass-poller, glassnode-poller, deribit + polygon
+-- options ingest). Schema is committed early so the read paths can be wired
+-- and tested against an empty table without coordinating a later migration.
+-- Shape matches §6.1 of ORDERFLOW BEAST REWORK MASTER.md.
+-- ──────────────────────────────────────────────────────────────────────────────
+
+-- P1-3 — Footprint bars (written by footprint-builder.service)
+CREATE TABLE IF NOT EXISTS footprint_bars (
+  ts          TIMESTAMPTZ NOT NULL,
+  instrument  TEXT        NOT NULL,
+  exchange    TEXT        NOT NULL,
+  timeframe   TEXT        NOT NULL DEFAULT '1m',
+  open        NUMERIC(20,8) NOT NULL,
+  high        NUMERIC(20,8) NOT NULL,
+  low         NUMERIC(20,8) NOT NULL,
+  close       NUMERIC(20,8) NOT NULL,
+  buy_vol     NUMERIC(20,8) NOT NULL DEFAULT 0,
+  sell_vol    NUMERIC(20,8) NOT NULL DEFAULT 0,
+  delta       NUMERIC(20,8) NOT NULL DEFAULT 0,
+  -- levels: [{"p": price, "b": buy_vol, "s": sell_vol, "d": delta}, ...]
+  levels      JSONB         NOT NULL DEFAULT '[]'
+);
+SELECT create_hypertable('footprint_bars', 'ts',
+  chunk_time_interval => INTERVAL '1 day',
+  if_not_exists => TRUE);
+CREATE UNIQUE INDEX IF NOT EXISTS footprint_bars_pkey
+  ON footprint_bars (instrument, exchange, timeframe, ts);
+SELECT add_retention_policy('footprint_bars', INTERVAL '30 days', if_not_exists => TRUE);
+
+-- P1-4 — Derivatives metrics (written by coinglass-poller.service)
+CREATE TABLE IF NOT EXISTS derivatives_metrics (
+  ts          TIMESTAMPTZ NOT NULL,
+  instrument  TEXT        NOT NULL,
+  source      TEXT        NOT NULL,  -- 'coinglass' | future providers
+  metric      TEXT        NOT NULL,  -- 'oi' | 'funding' | 'longshort' | 'liquidations'
+  value       NUMERIC(28,8),
+  metadata    JSONB       DEFAULT '{}'
+);
+SELECT create_hypertable('derivatives_metrics', 'ts',
+  chunk_time_interval => INTERVAL '1 day',
+  if_not_exists => TRUE);
+CREATE INDEX IF NOT EXISTS derivatives_metrics_lookup
+  ON derivatives_metrics (instrument, metric, ts DESC);
+SELECT add_retention_policy('derivatives_metrics', INTERVAL '90 days', if_not_exists => TRUE);
+
+-- P1-5 — On-chain metrics (written by glassnode-poller.service, Pro only)
+CREATE TABLE IF NOT EXISTS onchain_metrics (
+  ts          TIMESTAMPTZ NOT NULL,
+  instrument  TEXT        NOT NULL,
+  metric      TEXT        NOT NULL,  -- 'netflow' | 'whales' | 'lth_supply' | ...
+  value       NUMERIC(28,8),
+  entity      TEXT                   -- exchange name or cohort label
+);
+SELECT create_hypertable('onchain_metrics', 'ts',
+  chunk_time_interval => INTERVAL '7 days',
+  if_not_exists => TRUE);
+CREATE INDEX IF NOT EXISTS onchain_metrics_lookup
+  ON onchain_metrics (instrument, metric, ts DESC);
+SELECT add_retention_policy('onchain_metrics', INTERVAL '365 days', if_not_exists => TRUE);
+
+-- P1-6 — Options events (written by deribit + polygon options ingest)
+CREATE TABLE IF NOT EXISTS options_events (
+  ts          TIMESTAMPTZ NOT NULL,
+  instrument  TEXT        NOT NULL,  -- underlying: BTC, ETH, AAPL, ...
+  source      TEXT        NOT NULL,  -- 'deribit' | 'polygon'
+  strike      NUMERIC(20,8),
+  expiry      DATE,
+  option_type TEXT,                  -- 'call' | 'put'
+  iv          NUMERIC(10,6),
+  delta       NUMERIC(10,6),
+  gamma       NUMERIC(10,6),
+  premium     NUMERIC(20,8),
+  oi          NUMERIC(28,8),
+  volume      NUMERIC(28,8)
+);
+SELECT create_hypertable('options_events', 'ts',
+  chunk_time_interval => INTERVAL '1 day',
+  if_not_exists => TRUE);
+CREATE INDEX IF NOT EXISTS options_events_lookup
+  ON options_events (instrument, source, ts DESC);
+SELECT add_retention_policy('options_events', INTERVAL '30 days', if_not_exists => TRUE);
