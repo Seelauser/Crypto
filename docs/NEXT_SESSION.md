@@ -1,6 +1,6 @@
 # Next Session — Start From Here
 
-**Last updated:** 2026-06-03 (session 23, E6 added) · **Latest commit on `origin/main`:** `2808d64`
+**Last updated:** 2026-06-03 (session 24, C2 done) · **Latest commit on branch:** `8009f04`
 
 This is the single document a future session should read first. It captures
 **where we are**, **what's verified working**, and **what to pick up next**
@@ -51,7 +51,6 @@ These are ordered by impact-per-hour.
 
 | # | Item | Effort | Notes |
 |---|---|---|---|
-| **C2** | Route 3 bypassed LLM callers through `callLlm()` | ~1 h | Restores ledger debit + audit row. Works without a real Anthropic key. |
 | **E7** | Per-page mobile audit | ~4 h | ARCHITECTURE.md §11 Tier 4 #12 |
 | **E8** | ESLint flat-config migration | ~1 h | ARCHITECTURE.md §11 Tier 5 #18 |
 | **P1-7** | Tier enum migration `free\|premium` → `free\|starter\|pro` | ~1 h | Breaking; saved for Phase 2 bundle |
@@ -65,7 +64,8 @@ These are ordered by impact-per-hour.
 - ✅ **E4** CAGGs on ohlcv_bars (session 22, `5b45890`)
 - ✅ **E5** OB retention policy (session 22, `5ac6361`)
 - ✅ **P1-3..1-6** 4 additive hypertables (this session, `f7a87c0`)
-- ✅ **E6** Persisted CVD baselines (this session, `2808d64` — Redis hash `streaming:cvd_snapshot`, 60s cadence, 24h staleness guard)
+- ✅ **E6** Persisted CVD baselines (session 23, `2808d64` — Redis hash `streaming:cvd_snapshot`, 60s cadence, 24h staleness guard)
+- ✅ **C2** All 3 LLM callers routed through shared `callLlm()` (session 24, `8009f04` — new `@orderflow/llm` package; dispatcher + daily-recap + explain route now share one billing/audit path; −513 lines of duplicated logic)
 
 #### Prompt caching (group) — gate authored, awaits a real key
 
@@ -78,14 +78,14 @@ x-api-key`.
 
 | # | Item | Effort | Why |
 |---|---|---|---|
-| **C2** | Route 3 bypassed callers through `callLlm()` — `apps/workers/notification-dispatcher.ts:153`, `apps/workers/daily-recap.ts:185`, `apps/web/src/app/api/signals/[id]/explain/route.ts:179`. Restores ledger debit, audit row, free-tier fallback. | ~1 h | Independent of caching but in the same file set. |
-| **C3** | Cost-center / `/admin` KPI for cache-hit rate from `llm_calls.cache_read_input_tokens`. | ~1 h | Without this, future regressions are invisible. |
+| ~~**C2**~~ | ✅ Done (session 24, `8009f04`). All 3 callers route through `callLlm()` in the new `@orderflow/llm` package — shared ledger debit, audit row, tier gating + free/exhausted-balance fallback, ephemeral caching. | — | — |
+| **C3** | Cost-center / `/admin` KPI for cache-hit rate from `llm_calls.cache_read_input_tokens`. | ~1 h | Without this, future regressions are invisible. Now that all calls log through one path (C2), every call reliably writes `llm_calls`. |
 | **C4** | Sonnet-tier features: per-feature prompt in a second cached system block. | ~1 h | Sonnet's 2048-token bar is easier to clear feature-by-feature. |
-| **C5** | Pre-warm with `max_tokens: 0` on `notification-dispatcher` + `daily-recap` boot. | ~30 min | Eliminates first-call cache-miss latency. Do after C1. |
+| **C5** | Pre-warm with `max_tokens: 0` on `notification-dispatcher` + `daily-recap` boot. | ~30 min | Eliminates first-call cache-miss latency. |
 
-**Recommended pick for next session: E6** if you want product depth, or
-**Phase 2** if you want to retire the breaking-change debt. C2 is also a
-clean win independent of credentials.
+**Recommended pick for next session: C3** (cache-hit KPI — now unblocked by
+C2's unified logging) for observability, **E7** for product depth, or
+**Phase 2** to retire the breaking-change debt.
 
 ### B) Items blocked on the owner pasting a credential
 
@@ -115,7 +115,7 @@ A new Claude session should:
 4. Open [`docs/OPERATIONS.md`](./OPERATIONS.md) §1 (Quick state check) to confirm the live service is still healthy.
 5. Wait for the operator to say **`work EN`** (engineering item) or **`done with NN`** (credential provided).
 
-If the operator just says "continue," start with **C2** unless they
+If the operator just says "continue," start with **C3** unless they
 indicate otherwise.
 
 ---
