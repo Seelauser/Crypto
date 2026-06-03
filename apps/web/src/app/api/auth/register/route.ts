@@ -78,8 +78,7 @@ export async function POST(req: NextRequest) {
       await sendVerificationEmail(email, username, verificationToken, user.id);
     } catch (err) {
       console.error('[register] sendVerificationEmail failed:', err);
-      // Don't kill registration — the user is already created. They can
-      // request a re-send later via /api/auth/resend (TODO).
+      // Don't kill registration — the user can re-request via /api/auth/resend.
     }
   }
 

@@ -22,6 +22,20 @@ function LoginInner() {
   const [showPw, setShowPw] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [resendOpen, setResendOpen] = useState(false);
+  const [resendEmail, setResendEmail] = useState('');
+  const [resendStatus, setResendStatus] = useState<'idle' | 'sending' | 'sent' | 'limited'>('idle');
+
+  async function handleResend(e: React.FormEvent) {
+    e.preventDefault();
+    setResendStatus('sending');
+    const res = await fetch('/api/auth/resend', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ email: resendEmail }),
+    });
+    setResendStatus(res.status === 429 ? 'limited' : 'sent');
+  }
 
   const callbackUrl = params.get('callbackUrl') ?? '/dashboard';
 
@@ -113,6 +127,50 @@ function LoginInner() {
             {loading ? <Loader2 size={16} className="spin" /> : 'Sign In'}
           </button>
         </form>
+
+        <div style={{ marginTop: 18, paddingTop: 14, borderTop: '1px solid #1f2128', textAlign: 'center' }}>
+          {!resendOpen ? (
+            <button
+              type="button"
+              onClick={() => setResendOpen(true)}
+              style={{ background: 'none', border: 'none', color: '#8a8f9b', fontSize: 12, cursor: 'pointer', textDecoration: 'underline' }}
+            >
+              Didn&apos;t get the verification email?
+            </button>
+          ) : (
+            <form onSubmit={handleResend} style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <p style={{ color: '#8a8f9b', fontSize: 12, margin: 0 }}>
+                Enter the email you registered with — we&apos;ll send a fresh link.
+              </p>
+              <input
+                className="input"
+                type="email"
+                placeholder="you@example.com"
+                value={resendEmail}
+                onChange={e => setResendEmail(e.target.value)}
+                required
+                disabled={resendStatus === 'sending' || resendStatus === 'sent'}
+              />
+              {resendStatus === 'sent' && (
+                <div className="success-box" style={{ marginBottom: 0 }}>
+                  <CheckCircle size={14} style={{ marginRight: 6 }} />
+                  If that email is registered, a verification link is on its way.
+                </div>
+              )}
+              {resendStatus === 'limited' && (
+                <div className="error-box">
+                  <AlertCircle size={14} style={{ marginRight: 6 }} />
+                  Too many requests. Try again in a few minutes.
+                </div>
+              )}
+              {resendStatus !== 'sent' && (
+                <button type="submit" className="btn-primary" disabled={resendStatus === 'sending'}>
+                  {resendStatus === 'sending' ? <Loader2 size={14} className="spin" /> : 'Resend verification email'}
+                </button>
+              )}
+            </form>
+          )}
+        </div>
       </div>
 
       <style>{`
