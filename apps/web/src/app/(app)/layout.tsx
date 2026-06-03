@@ -1,6 +1,7 @@
 import { auth } from '@/lib/auth';
 import { redirect } from 'next/navigation';
 import AppNav from '@/components/dashboard/AppNav';
+import { isAdminSession } from '@/lib/admin';
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const session = await auth();
@@ -11,6 +12,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     email: session.user.email ?? '',
     tier: (session.user as any).tier ?? 'free',
     tokenBalanceCents: (session.user as any).tokenBalanceCents ?? 0,
+    isAdmin: isAdminSession(session),
   };
 
   return (

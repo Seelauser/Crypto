@@ -125,6 +125,26 @@ export function computeCostCents(model: LlmModel, usage: LlmUsage): number {
   return Math.ceil(inputCents + outputCents + cacheReadCents + cacheWriteCents);
 }
 
+/**
+ * What a call *would* have cost with prompt caching disabled: the cached-read
+ * and cache-write tokens are re-priced at the full input rate. Subtract the
+ * real `computeCostCents` from this to get the dollars caching saved. Used by
+ * the admin cost-center KPI to quantify cache effectiveness.
+ */
+export function estimateUncachedCostCents(model: LlmModel, usage: LlmUsage): number {
+  const p = MODEL_PRICE_MAP[model];
+
+  const inputLikeTokens =
+    usage.input_tokens +
+    (usage.cache_read_input_tokens ?? 0) +
+    (usage.cache_creation_input_tokens ?? 0);
+
+  const inputCents  = (inputLikeTokens / 1000) * p.input;
+  const outputCents = (usage.output_tokens / 1000) * p.output;
+
+  return Math.ceil(inputCents + outputCents);
+}
+
 // ─── Model Resolution ─────────────────────────────────────────────────────────
 
 /**

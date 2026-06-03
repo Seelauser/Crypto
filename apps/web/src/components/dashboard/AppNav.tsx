@@ -6,7 +6,7 @@ import { usePathname } from 'next/navigation';
 import { signOut } from 'next-auth/react';
 import {
   LayoutDashboard, Zap, Search, BookOpen, BarChart2,
-  CreditCard, Settings, LogOut, Cpu, Menu,
+  CreditCard, Settings, LogOut, Cpu, Menu, ShieldCheck,
 } from 'lucide-react';
 import { Drawer } from '@/components/ui/Drawer';
 
@@ -23,8 +23,15 @@ const BOTTOM_ITEMS = [
   { href: '/settings', icon: Settings, label: 'Settings' },
 ] as const;
 
+const ADMIN_ITEM = { href: '/admin', icon: ShieldCheck, label: 'Admin' } as const;
+
+/** Bottom nav items, with the admin entry appended only for admins. */
+function bottomItemsFor(user: Props['user']) {
+  return user.isAdmin ? [...BOTTOM_ITEMS, ADMIN_ITEM] : BOTTOM_ITEMS;
+}
+
 interface Props {
-  user: { username: string; tier: string; tokenBalanceCents: number };
+  user: { username: string; tier: string; tokenBalanceCents: number; isAdmin: boolean };
 }
 
 export default function AppNav({ user }: Props) {
@@ -79,7 +86,7 @@ function DesktopSidebar({
 
       <div className="flex-1" />
 
-      {BOTTOM_ITEMS.map(({ href, icon: Icon, label }) => {
+      {bottomItemsFor(user).map(({ href, icon: Icon, label }) => {
         const active = pathname === href;
         return (
           <NavIcon key={href} href={href} label={label} active={active}>
@@ -185,7 +192,7 @@ function MobileNavDrawer({
 
         <div className="my-2 h-px bg-[#1f2128]" />
 
-        {BOTTOM_ITEMS.map(({ href, icon: Icon, label }) => {
+        {bottomItemsFor(user).map(({ href, icon: Icon, label }) => {
           const active = pathname === href;
           return (
             <DrawerLink

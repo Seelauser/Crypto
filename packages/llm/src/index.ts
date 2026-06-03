@@ -2,6 +2,7 @@ export {
   callLlm,
   resolveModel,
   computeCostCents,
+  estimateUncachedCostCents,
 } from './router';
 
 export type {
