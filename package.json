@@ -12,7 +12,8 @@
     "db:seed": "turbo run db:seed",
     "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md}\"",
     "web:build": "bash scripts/web-build.sh",
-    "web:deploy": "bash scripts/web-build.sh --restart"
+    "web:deploy": "bash scripts/web-build.sh --restart",
+    "verify:cache": "tsx scripts/verify-cache.ts"
   },
   "devDependencies": {
     "turbo": "^2.3.0",

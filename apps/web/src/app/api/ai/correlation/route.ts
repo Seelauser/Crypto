@@ -4,6 +4,7 @@ import Redis from 'ioredis';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { z } from 'zod';
+import { SYSTEM_PROMPT_CACHE_BLOCK } from '@orderflow/llm-prompts';
 import type { UserTier } from '@orderflow/types';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -130,6 +131,7 @@ async function narrateDivergence(
   const res = await anthropic.messages.create({
     model:      MODEL,
     max_tokens: MAX_OUTPUT_TOKENS,
+    system:     [SYSTEM_PROMPT_CACHE_BLOCK],
     messages:   [{ role: 'user', content: prompt }],
   });
 

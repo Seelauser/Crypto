@@ -4,7 +4,7 @@ import Redis from 'ioredis';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { buildTierGateError } from '@/lib/limits';
-import { buildDeepAnalysisPrompt } from '@orderflow/llm-prompts';
+import { buildDeepAnalysisPrompt, SYSTEM_PROMPT_CACHE_BLOCK } from '@orderflow/llm-prompts';
 import { z } from 'zod';
 import type { UserTier } from '@orderflow/types';
 
@@ -275,6 +275,7 @@ export async function POST(req: NextRequest): Promise<Response> {
         const stream = anthropic.messages.stream({
           model:      MODEL,
           max_tokens: MAX_OUTPUT_TOKENS,
+          system:     [SYSTEM_PROMPT_CACHE_BLOCK],
           messages: [
             { role: 'user', content: prompt },
           ],
