@@ -90,7 +90,7 @@ Local services:
 
 ### Auth & limits
 - `apps/web/src/lib/auth.ts` — NextAuth v5 credentials provider (username login)
-- `apps/web/src/lib/limits.ts` — Free vs Pro feature gates (single source of truth)
+- `apps/web/src/lib/limits.ts` — 3-tier (`free`/`starter`/`pro`) feature gates + `tierAtLeast`/`canUseFeature`/`normalizeTier` (single source of truth)
 - `apps/web/src/lib/email.ts` — `isEmailEnabled()` — Resend client is `null` when `RESEND_API_KEY` is unset; registration falls back to auto-activation
 - `apps/web/src/middleware.ts` — Route protection; `/`, `/try`, `/login`, `/register`, `/plan` are public
 
@@ -102,7 +102,7 @@ Local services:
 ### LLM
 - `packages/llm-prompts/src/system.ts` — System prompt with `cache_control: ephemeral`
 - `packages/llm/src/router.ts` — **Single LLM entry point** (`callLlm`): three-tier model selector, tier gating, premium-balance→Haiku fallback, ephemeral caching, `llm_calls` audit row + token-ledger debit. Inject your app's PrismaClient. **Route every new LLM call through `callLlm` — never hand-roll cost/ledger math.** Used by the dispatcher, daily-recap, and the explain route. `apps/api/src/llm/router.ts` is a thin re-export of this package.
-- `apps/web/src/app/api/signals/[id]/explain/route.ts` — Per-event AI explanation (free-tier daily quota + premium 402 gate live here; billing in `callLlm`)
+- `apps/web/src/app/api/signals/[id]/explain/route.ts` — Per-event AI explanation (free+starter take the Haiku daily quota; Pro hits the 402 balance gate; billing in `callLlm`)
 - `apps/workers/notification-dispatcher.ts` — Gracefully falls back to a fixed string if `ANTHROPIC_API_KEY` is unset or AI call throws
 
 ### Real-time
@@ -147,19 +147,26 @@ signal:triggered:<userId>  per-user signal fan-out
 
 All gates are enforced server-side. The client shows UI hints but **never trusts the client**.
 
-| Feature | Free | Pro |
-|---|---|---|
-| Signal setups | 3 | Unlimited |
-| Instruments/setup | 5 | 10 |
-| Scans/24h | 10 | Unlimited |
-| Scan scope | Single market | Cross-market |
-| AI calls/day | 10 (Haiku only) | Unlimited (metered $) |
-| History | 7 days | Full |
-| Notification channels | Email, Push | + Telegram, Webhook |
-| Footprint, Heatmap, DOM | — | ✓ |
-| CSV export, API access | — | ✓ |
+Three tiers (`free | starter | pro`). `pro` is the superset; `starter` ($19) is
+the middle tier. `apps/web/src/lib/limits.ts` is the single source of truth —
+use `tierAtLeast(tier, required)` / `canUseFeature(tier, flag)`, not scattered
+`=== 'pro'` checks. The billing dimension inside `@orderflow/llm` stays
+`free | premium`; map subscription→billing as `tier === 'pro' ? 'premium' : 'free'`.
 
-Gate responses: `HTTP 403 { error: 'tier_gate', feature, tierRequired, upgradeUrl }`.
+| Feature | Free | Starter ($19) | Pro ($49) |
+|---|---|---|---|
+| Signal setups | 3 | Unlimited | Unlimited |
+| Instruments/setup | 5 | 10 | Unlimited |
+| Scans/24h | 10 | 10 | Unlimited |
+| Scan scope | Single | Cross-market | Cross-market |
+| AI calls/day | 10 Haiku | 10 Haiku | Unlimited Sonnet (metered $) |
+| History | 7 days | 30 days | Full |
+| Notification channels | Email, Push | Email, Push | + Telegram, Webhook |
+| Footprint, Heatmap, DOM | — | (chart-phase) | ✓ |
+| Deep analysis (Opus), CSV, API | — | — | ✓ |
+
+Gate responses: `HTTP 403 { error: 'tier_gate', feature, tierRequired, upgradeUrl }`
+where `tierRequired` is `'starter'` or `'pro'`.
 
 ## Data quality labels
 
@@ -194,7 +201,7 @@ Prompt caching: system prompt block has `cache_control: { type: 'ephemeral' }` o
 
 - All numeric values in UI use `font-family: 'JetBrains Mono', monospace`
 - Colors: buy = `#22d3ee`, sell = `#f97366`, warn = `#fbbf24`, ok = `#22c55e`
-- Tier gate JSON is always `{ error: 'tier_gate', feature, tierRequired: 'premium', upgradeUrl }`
+- Tier gate JSON is always `{ error: 'tier_gate', feature, tierRequired, upgradeUrl }` where `tierRequired` is `'starter'` or `'pro'`
 - Soft-delete signals by setting `status = 'archived'` (preserves event history)
 - TimescaleDB hypertables auto-reapply via `db:migrate` — no manual `psql -f` needed
 - Mobile work loads from `/var/www/design-system/`; do not bundle Material/Liquid Glass locally (VPS master rule)
