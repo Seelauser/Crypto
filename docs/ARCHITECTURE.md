@@ -223,7 +223,20 @@ Three tiers, assigned by feature, see [CLAUDE.md §LLM cost model](../CLAUDE.md)
 - Each call: `balance_cents -= cost_cents`, row inserted into `llm_calls`
 - When balance hits 0, premium users transparently downgrade to Haiku
 
-**Caching:** system prompt block is sent with `cache_control: { type: 'ephemeral' }` on every call. The 5-minute cache TTL is the dominant cost knob — concurrent dispatcher calls within 5min reuse the same cached system prompt.
+**Caching (broken — silent no-op).** The `cache_control: { type: 'ephemeral' }` marker is set correctly on the last system block (`packages/llm-prompts/src/system.ts:29`, placement via `withEphemeralCacheOnLast()` in `apps/api/src/llm/router.ts:141`). But the system prompt is only ~280 words ≈ **~350 tokens**, below Anthropic's minimum cacheable prefix on every model in use:
+
+| Model | Min cacheable prefix | OrderFlow system prompt |
+|---|---|---|
+| Haiku 4.5 | 4096 tokens | ~350 |
+| Sonnet 4.6 | 2048 tokens | ~350 |
+| Opus 4.7 | 4096 tokens | ~350 |
+
+Result: `cache_creation_input_tokens` is silently `0` on every call, no cache is ever written, no cache is ever read. Nothing alerts on this today. Fix is in `docs/NEXT_SESSION.md` §3A — items **C1–C5**.
+
+**Router bypass.** Three hot paths skip `callLlm()` and call `anthropic.messages.create` directly — they lose token-ledger debit, audit logging, and tier fallback:
+- `apps/workers/notification-dispatcher.ts:153`
+- `apps/workers/daily-recap.ts:185`
+- `apps/web/src/app/api/signals/[id]/explain/route.ts:179`
 
 **AI-touching API routes:**
 - `/api/signals/[id]/explain` — on-demand re-explain for a triggered event
@@ -324,6 +337,8 @@ bottleneck.
 7. **No `/api/auth/resend` route.** If a verification email fails, the user has no recourse.
 8. **CVD state resets on streaming-worker restart.** No persistence of running CVD; a restart loses the baseline. UI handles gracefully but PnL-on-CVD logic would be off until next reset.
 9. **Trigger-evaluator setup cache is 30s TTL.** New setup → up to 30s before it can fire.
+10. **Prompt caching is silently inactive.** `cache_control: ephemeral` is set on the system block but the system prompt (~350 tokens) is below the minimum cacheable prefix on every model (2048 for Sonnet, 4096 for Haiku/Opus). Every AI call pays full input price. See §6.
+11. **Three callers bypass the LLM router.** `apps/workers/{notification-dispatcher,daily-recap}.ts` and `apps/web/src/app/api/signals/[id]/explain/route.ts` call `anthropic.messages.create` directly, losing token-ledger debit, audit logging, and tier fallback.
 
 ---
 
@@ -337,6 +352,9 @@ bottleneck.
 | 2 | Configure Resend + VAPID keys | 0 code, owner action | Users actually receive their signals (#3 above) |
 | 3 | Build `/api/auth/resend` route + UI button | ~1 h | Unblocks any user who didn't receive verification |
 | 4 | Move registration rate limit to Redis | ~30 min | Trivial DoS surface closed |
+| 5 | **Prompt-caching fix (C1):** pad `SYSTEM_PROMPT` past 4096 tokens | ~1 h | Unlocks ~⅔–¾ input-cost cut on every AI call (caching is silent no-op today) |
+| 6 | **Router consolidation (C2):** route the 3 bypassed callers through `callLlm()` | ~1 h | Restores token ledger + audit + tier fallback for the highest-volume callers (notification-dispatcher, daily-recap, signals/explain) |
+| 7 | **Cache-hit KPI (C3):** surface `cache_read_input_tokens` percentage in `/admin` | ~1 h | Today there is no signal that caching is working — future regressions invisible |
 
 **Tier 2 — moderate effort, infrastructure leverage**
 

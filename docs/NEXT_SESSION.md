@@ -59,9 +59,27 @@ These are ordered by impact-per-hour. Pick one and tell me **`work E1`** etc.
 | **E7** | Per-page mobile audit | ~4 h | ARCHITECTURE.md §11 Tier 4 #12 |
 | **E8** | ESLint flat-config migration | ~1 h | ARCHITECTURE.md §11 Tier 5 #18 |
 
+#### Prompt caching (group) — silent no-op today, ~⅔–¾ input-cost cut once fixed
+
+The `cache_control: { type: 'ephemeral' }` markers are wired correctly but the
+system prompt is ~350 tokens — **below Anthropic's minimum cacheable prefix**
+(2048 for Sonnet 4.6; 4096 for Haiku 4.5 + Opus 4.7). Every call silently writes
+`cache_creation_input_tokens: 0` and never caches. No alert on this today.
+
+| # | Item | Effort | Why |
+|---|---|---|---|
+| **C1** | Pad `packages/llm-prompts/src/system.ts` past **4096 tokens** with stable reference material (concept glossary, formatting rules, calibration examples, asset-class taxonomy, [True L2] vs [Inferred] definitions, refusal rubric). Content must be static — no dates, IDs, or per-user state. | ~1 h | The single biggest cost win. Every call gets ~90% off the system prefix after first write. |
+| **C2** | Route the 3 bypassed callers through `callLlm()` — `apps/workers/notification-dispatcher.ts:153`, `apps/workers/daily-recap.ts:185`, `apps/web/src/app/api/signals/[id]/explain/route.ts:179`. Today they call `anthropic.messages.create` directly and lose: token-ledger debit, `llm_calls` audit row, free-tier Haiku fallback, premium-balance-exhausted fallback. | ~1 h | Restores billing + audit integrity. Independent of caching but in the same file set. |
+| **C3** | Cost-center / `/admin` KPI for cache-hit rate from `llm_calls.cache_read_input_tokens`. Surface `cached / (cached + input)` as a daily and per-feature percentage. | ~1 h | Without this, the regression is invisible — caching could break again silently. |
+| **C4** | For Sonnet-tier features only: move per-feature prompt into the system block as a second block, place `cache_control` on it. Sonnet's 2048-token bar is easier to clear feature-by-feature. | ~1 h | Sonnet routes (`signal_explanation`, `scan_narrative`, `tape_narrator`, `regime_narration`, `correlation_alert`) cache without padding the global prompt. |
+| **C5** | Pre-warm with `max_tokens: 0` on `notification-dispatcher` + `daily-recap` boot. | ~30 min | Eliminates first-call cache-miss latency for the long-lived workers. Only worth doing after C1 lands. |
+
+**Recommended order:** C1 (unlocks caching) → C2 (independent hygiene) → C3 (visibility) → C4 / C5 (incremental).
+
 **Recommended pick for the next session: E1.** It is the cheapest in time
 and the highest in product impact — it takes "Scans," currently advertised
-in the UI but silently broken, and makes it work.
+in the UI but silently broken, and makes it work. If you'd rather attack
+cost first, **start with C1** — same effort, immediate per-call cost cut.
 
 ### B) Items blocked on the owner pasting a credential
 

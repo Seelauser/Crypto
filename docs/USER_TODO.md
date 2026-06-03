@@ -142,4 +142,16 @@ These came out of the as-built review documented in [`ARCHITECTURE.md`](./ARCHIT
 | E7 | Per-page mobile audit (/signals, /scans, /settings, /billing, /markets) | ~4 h | Only `/dashboard` got the mobile-first treatment in session 19 |
 | E8 | Migrate from `next lint` (deprecated) to ESLint flat config | ~1 h | Lint coverage is currently dropped in CI |
 
-Tell me **`work E1`** (or whichever number) and I'll pick it up.
+### Prompt caching — cost reduction (silent no-op today)
+
+Anthropic prompt caching is wired up (`cache_control: { type: 'ephemeral' }` is set correctly) but the system prompt is below the minimum cacheable prefix (~350 tokens vs 2048 / 4096 required). Every API call is paying full price. Fixing this cuts ~⅔–¾ of input cost on AI features.
+
+| # | Item | Effort | Why it matters |
+|---|---|---|---|
+| C1 | Pad `packages/llm-prompts/src/system.ts` past 4096 tokens with stable reference material | ~1 h | Unlocks caching across Haiku/Sonnet/Opus. Biggest single cost win. |
+| C2 | Route 3 bypassed callers (notification-dispatcher, daily-recap, signals/explain) through `callLlm()` | ~1 h | Restores token-ledger debit + audit logging + tier fallback (today they bypass these) |
+| C3 | Cache-hit-rate KPI in `/admin` from `llm_calls.cache_read_input_tokens` | ~1 h | Without it, future regressions are invisible |
+| C4 | Sonnet-only: per-feature prompt into a second cached system block (lower 2048-token bar) | ~1 h | Sonnet features cache without padding the global prompt |
+| C5 | `max_tokens: 0` pre-warm on long-lived worker boot | ~30 min | Eliminates first-call latency post-restart. After C1 lands. |
+
+Tell me **`work E1`** or **`work C1`** (or whichever number) and I'll pick it up.
