@@ -1,6 +1,6 @@
 # Next Session — Start From Here
 
-**Last updated:** 2026-06-03 (session 23) · **Latest commit on `origin/main`:** `6e34ada`
+**Last updated:** 2026-06-03 (session 23, E6 added) · **Latest commit on `origin/main`:** `2808d64`
 
 This is the single document a future session should read first. It captures
 **where we are**, **what's verified working**, and **what to pick up next**
@@ -30,6 +30,7 @@ without scrolling through prior checkpoints.
 
 | Commit | What |
 |---|---|
+| `2808d64` | feat(streaming): persist CVD baselines across worker restarts (E6) |
 | `6e34ada` | fix(redis): allow commands to buffer during initial connect (cold-start race) |
 | `74f439f` | feat(auth): /api/auth/resend route + inline resend on login (E3) |
 | `f7a87c0` | feat(db): Phase 1.3–1.6 hypertables (footprint, derivs, on-chain, options) |
@@ -50,10 +51,10 @@ These are ordered by impact-per-hour.
 
 | # | Item | Effort | Notes |
 |---|---|---|---|
-| **E6** | Persist streaming CVD baselines | ~2 h | Analytics survive restarts. ARCHITECTURE.md §11 Tier 2 #7 |
+| **C2** | Route 3 bypassed LLM callers through `callLlm()` | ~1 h | Restores ledger debit + audit row. Works without a real Anthropic key. |
 | **E7** | Per-page mobile audit | ~4 h | ARCHITECTURE.md §11 Tier 4 #12 |
 | **E8** | ESLint flat-config migration | ~1 h | ARCHITECTURE.md §11 Tier 5 #18 |
-| **P1-7** | Tier enum migration `free|premium` → `free|starter|pro` | ~1 h | Breaking; saved for Phase 2 bundle |
+| **P1-7** | Tier enum migration `free\|premium` → `free\|starter\|pro` | ~1 h | Breaking; saved for Phase 2 bundle |
 | **Phase 2** | Full 3-tier system rollout | ~6–10 h | Breaking, well-scoped; coordinated PR |
 
 #### Done since previous picklist (move from A to ✓)
@@ -64,6 +65,7 @@ These are ordered by impact-per-hour.
 - ✅ **E4** CAGGs on ohlcv_bars (session 22, `5b45890`)
 - ✅ **E5** OB retention policy (session 22, `5ac6361`)
 - ✅ **P1-3..1-6** 4 additive hypertables (this session, `f7a87c0`)
+- ✅ **E6** Persisted CVD baselines (this session, `2808d64` — Redis hash `streaming:cvd_snapshot`, 60s cadence, 24h staleness guard)
 
 #### Prompt caching (group) — gate authored, awaits a real key
 
@@ -113,7 +115,7 @@ A new Claude session should:
 4. Open [`docs/OPERATIONS.md`](./OPERATIONS.md) §1 (Quick state check) to confirm the live service is still healthy.
 5. Wait for the operator to say **`work EN`** (engineering item) or **`done with NN`** (credential provided).
 
-If the operator just says "continue," start with **E6** unless they
+If the operator just says "continue," start with **C2** unless they
 indicate otherwise.
 
 ---
