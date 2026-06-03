@@ -10,9 +10,14 @@ declare global {
 const redis =
   globalThis.__redis ??
   new Redis(process.env.REDIS_URL ?? 'redis://localhost:6379', {
-    lazyConnect:         true,
-    enableOfflineQueue:  false,
-    connectTimeout:      2000,
+    // lazyConnect avoids blocking module import; enableOfflineQueue lets
+    // the first few commands buffer until the connection is ready instead
+    // of erroring out with "Stream isn't writeable" on every fresh boot.
+    // connectTimeout + maxRetriesPerRequest still bound failure under a
+    // real Redis outage.
+    lazyConnect:          true,
+    enableOfflineQueue:   true,
+    connectTimeout:       2000,
     maxRetriesPerRequest: 1,
   });
 
