@@ -1,5 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk';
 import type { PrismaClient } from '@prisma/client';
+import { recordCacheEvent, estimateTokens } from './cache-observability';
 
 // ─── Feature / Model Types ────────────────────────────────────────────────────
 // This package owns the exhaustive feature → model mapping, the per-model
@@ -331,18 +332,35 @@ export async function callLlm(params: CallLlmParams): Promise<CallLlmResult> {
     typeof messages === 'function' ? messages(model) : messages;
 
   // 3. Cache the system prefix
-  const systemParam: Anthropic.TextBlockParam[] | undefined =
-    systemBlocks && systemBlocks.length > 0
-      ? withEphemeralCacheOnLast(systemBlocks)
-      : undefined;
+  const hadSystem = !!(systemBlocks && systemBlocks.length > 0);
+  const systemParam: Anthropic.TextBlockParam[] | undefined = hadSystem
+    ? withEphemeralCacheOnLast(systemBlocks!)
+    : undefined;
+  const systemTokensEst = hadSystem
+    ? (systemBlocks ?? []).reduce((n, b) => n + estimateTokens(b.text ?? ''), 0)
+    : 0;
+
+  // 3a. No-key guard — surface the real reason in the cache log instead of an
+  //     opaque 401 buried in the caller's catch. This is the #1 cause of an
+  //     empty prompt-cache dashboard (see docs/LLM_CACHE_DOCTOR.md).
+  if (!process.env.ANTHROPIC_API_KEY) {
+    recordCacheEvent({ feature, model, tier: userTier, hadSystem, systemTokensEst, notCalled: 'no_api_key' });
+    throw new Error('[llm/router] ANTHROPIC_API_KEY is not set — no LLM call made');
+  }
 
   // 4. Dispatch
-  const response = await anthropic.messages.create({
-    model,
-    max_tokens: maxTokens,
-    system:     systemParam,
-    messages:   resolvedMessages,
-  });
+  let response: Anthropic.Message;
+  try {
+    response = await anthropic.messages.create({
+      model,
+      max_tokens: maxTokens,
+      system:     systemParam,
+      messages:   resolvedMessages,
+    });
+  } catch (err) {
+    recordCacheEvent({ feature, model, tier: userTier, hadSystem, systemTokensEst, notCalled: 'call_error' });
+    throw err;
+  }
 
   const usage: LlmUsage = {
     input_tokens:                response.usage.input_tokens,
@@ -359,6 +377,13 @@ export async function callLlm(params: CallLlmParams): Promise<CallLlmResult> {
   // 5. Audit + debit
   const costCents = computeCostCents(model, usage);
   await logCall(db, { userId, feature, model, usage, costCents, batched: batch });
+
+  // 5a. Cache telemetry — one self-diagnosing line per call for the doctor.
+  recordCacheEvent({
+    feature, model, tier: userTier, hadSystem, systemTokensEst,
+    usage, costCents,
+    requestId: (response as { _request_id?: string | null })._request_id ?? null,
+  });
 
   if (userTier === 'premium') {
     await deductFromLedger(db, userId, costCents);

@@ -13,3 +13,19 @@ export type {
   CallLlmParams,
   CallLlmResult,
 } from './router';
+
+// Prompt-cache observability — structured, self-diagnosing telemetry consumed
+// by the doctor agent. See docs/LLM_CACHE_DOCTOR.md.
+export {
+  recordCacheEvent,
+  classifyCache,
+  estimateTokens,
+  MODEL_MIN_CACHE_TOKENS,
+  CACHE_LOG_SCHEMA_VERSION,
+} from './cache-observability';
+
+export type {
+  CacheOutcome,
+  CacheSeverity,
+  CacheEventInput,
+} from './cache-observability';

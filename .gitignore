@@ -42,3 +42,6 @@ apps/api/dist/
 apps/ws-gateway/dist/
 apps/workers/dist/
 .claude/
+
+# Prompt-cache doctor logs (runtime)
+/logs/

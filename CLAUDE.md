@@ -100,7 +100,8 @@ Local services:
 - `apps/web/src/app/(app)/billing/upgrade/page.tsx` — `/billing/upgrade` landing page
 
 ### LLM
-- `packages/llm-prompts/src/system.ts` — System prompt with `cache_control: ephemeral`
+- `packages/llm-prompts/src/system.ts` — System prompt with `cache_control: ephemeral`. **Sized to clear 4,096 tokens** (the per-model cacheable minimum for Haiku 4.5 / Opus 4.7) — do not shorten below ~4,500 tokens or caching silently breaks. Verify with `pnpm verify:cache`.
+- `packages/llm/src/cache-observability.ts` — per-call prompt-cache telemetry (JSONL). Writes `events-*.jsonl` + `health.jsonl` under `$LLM_CACHE_LOG_DIR`. Classifies every call (`hit` / `miss_below_min` / `no_api_key` / …) with a fix hint. **Doctor playbook: [`docs/LLM_CACHE_DOCTOR.md`](docs/LLM_CACHE_DOCTOR.md).**
 - `packages/llm/src/router.ts` — **Single LLM entry point** (`callLlm`): three-tier model selector, tier gating, premium-balance→Haiku fallback, ephemeral caching, `llm_calls` audit row + token-ledger debit. Inject your app's PrismaClient. **Route every new LLM call through `callLlm` — never hand-roll cost/ledger math.** Used by the dispatcher, daily-recap, and the explain route. `apps/api/src/llm/router.ts` is a thin re-export of this package.
 - `apps/web/src/app/api/signals/[id]/explain/route.ts` — Per-event AI explanation (free+starter take the Haiku daily quota; Pro hits the 402 balance gate; billing in `callLlm`)
 - `apps/workers/notification-dispatcher.ts` — Gracefully falls back to a fixed string if `ANTHROPIC_API_KEY` is unset or AI call throws
