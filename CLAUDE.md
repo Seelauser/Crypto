@@ -101,8 +101,8 @@ Local services:
 
 ### LLM
 - `packages/llm-prompts/src/system.ts` — System prompt with `cache_control: ephemeral`
-- `apps/api/src/llm/router.ts` — Three-tier model selector + cost accounting
-- `apps/web/src/app/api/signals/[id]/explain/route.ts` — Per-event AI explanation
+- `packages/llm/src/router.ts` — **Single LLM entry point** (`callLlm`): three-tier model selector, tier gating, premium-balance→Haiku fallback, ephemeral caching, `llm_calls` audit row + token-ledger debit. Inject your app's PrismaClient. **Route every new LLM call through `callLlm` — never hand-roll cost/ledger math.** Used by the dispatcher, daily-recap, and the explain route. `apps/api/src/llm/router.ts` is a thin re-export of this package.
+- `apps/web/src/app/api/signals/[id]/explain/route.ts` — Per-event AI explanation (free-tier daily quota + premium 402 gate live here; billing in `callLlm`)
 - `apps/workers/notification-dispatcher.ts` — Gracefully falls back to a fixed string if `ANTHROPIC_API_KEY` is unset or AI call throws
 
 ### Real-time
