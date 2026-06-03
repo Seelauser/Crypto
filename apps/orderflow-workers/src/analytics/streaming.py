@@ -22,9 +22,10 @@ Design notes
 - One asyncio loop per worker, single redis pubsub subscriber.
 - Per-instrument tick buffer is a `deque` trimmed by timestamp to the
   last TICK_BUF_SECONDS seconds.
-- Running CVD is reset on worker start. For triggers that watch "CVD
-  crossed +N", the reset is fine — the trigger logic uses a state
-  machine, not historical CVD.
+- Running CVD is snapshotted to Redis hash `streaming:cvd_snapshot`
+  every CVD_SNAPSHOT_INTERVAL_SECONDS and reloaded on startup so worker
+  restarts don't wipe baselines. Snapshots older than
+  CVD_SNAPSHOT_MAX_AGE_SECONDS are discarded as stale.
 - Sweep dedupe: re-detection on the rolling window is idempotent in
   principle, but we hash (instrument, ts of first trade, side) and
   refuse to re-emit. A sweep event's `ts` is the first-trade timestamp,
@@ -67,6 +68,10 @@ CHANNEL_SWEEP         = "market:sweep_detected"
 CHANNEL_LARGE_PRINT   = "market:large_print"
 CHANNEL_IMBALANCE     = "market:imbalance_update"
 
+# CVD baselines are snapshotted here so worker restarts don't reset the
+# running totals consumed by per-instrument signal triggers.
+KEY_CVD_SNAPSHOT      = "streaming:cvd_snapshot"
+
 # ---------------------------------------------------------------------------
 # Tunables (env-overridable)
 # ---------------------------------------------------------------------------
@@ -78,6 +83,8 @@ SWEEP_MIN_TRADES          = int(os.getenv("STREAM_SWEEP_MIN_TRADES",          "3
 LARGE_PRINT_THRESHOLD_USD = float(os.getenv("STREAM_LARGE_PRINT_USD",         "50000"))
 IMBALANCE_TOP_N           = int(os.getenv("STREAM_IMBALANCE_TOP_N",           "5"))
 STATS_INTERVAL_SECONDS    = float(os.getenv("STREAM_STATS_INTERVAL_SECONDS",  "30"))
+CVD_SNAPSHOT_INTERVAL_SECONDS = float(os.getenv("STREAM_CVD_SNAPSHOT_INTERVAL_SECONDS", "60"))
+CVD_SNAPSHOT_MAX_AGE_SECONDS  = float(os.getenv("STREAM_CVD_SNAPSHOT_MAX_AGE_SECONDS",  "86400"))
 
 
 class InstrumentState:
@@ -150,6 +157,68 @@ class StreamingAnalytics:
             st = InstrumentState(instrument, exchange)
             self._state[key] = st
         return st
+
+    # -------- CVD snapshot persistence --------------------------------
+    async def _load_cvd_snapshot(self) -> None:
+        """Restore CVD baselines from Redis on startup.
+
+        Entries older than CVD_SNAPSHOT_MAX_AGE_SECONDS are skipped — a
+        stale running total seeded after a multi-day outage would mislead
+        triggers more than starting from zero.
+        """
+        try:
+            raw = await self._redis.hgetall(KEY_CVD_SNAPSHOT)
+        except Exception as exc:
+            logger.warning("cvd snapshot load failed: %s", exc)
+            return
+        if not raw:
+            logger.info("no CVD snapshot found — starting fresh baselines")
+            return
+
+        now_ms = int(time.time() * 1000)
+        loaded = 0
+        stale = 0
+        for key, payload in raw.items():
+            try:
+                data = json.loads(payload)
+                cvd = float(data["cvd"])
+                snap_ts = int(data["ts"])
+            except (TypeError, ValueError, KeyError):
+                continue
+            if (now_ms - snap_ts) / 1000 > CVD_SNAPSHOT_MAX_AGE_SECONDS:
+                stale += 1
+                continue
+            instrument, sep, exchange = key.partition(":")
+            if not sep or not instrument or not exchange:
+                continue
+            st = self._state_for(instrument, exchange)
+            st.cvd = cvd
+        loaded = len(self._state)
+        logger.info(
+            "loaded %d CVD baselines from snapshot (%d stale skipped)", loaded, stale,
+        )
+
+    async def _write_cvd_snapshot(self) -> int:
+        """Write one snapshot of every tracked instrument's CVD. Returns count."""
+        if not self._state:
+            return 0
+        now_ms = int(time.time() * 1000)
+        mapping = {
+            key: json.dumps({"cvd": st.cvd, "ts": now_ms})
+            for key, st in self._state.items()
+        }
+        try:
+            await self._redis.hset(KEY_CVD_SNAPSHOT, mapping=mapping)
+        except Exception as exc:
+            logger.warning("cvd snapshot write failed: %s", exc)
+            return 0
+        return len(mapping)
+
+    async def _snapshot_periodic(self) -> None:
+        """Background task — periodically persist CVD baselines."""
+        while True:
+            await asyncio.sleep(CVD_SNAPSHOT_INTERVAL_SECONDS)
+            await self._write_cvd_snapshot()
 
     # -------- ingestion handlers --------------------------------------
     async def _handle_tick(self, payload: Dict[str, Any]) -> None:
@@ -269,11 +338,17 @@ class StreamingAnalytics:
 
     # -------- main loop ------------------------------------------------
     async def run(self) -> None:
+        # Restore CVD baselines before any tick arrives so new prints
+        # immediately update the persisted value rather than rebuilding
+        # from zero.
+        await self._load_cvd_snapshot()
+
         pubsub = self._redis.pubsub()
         await pubsub.subscribe(CHANNEL_TICKS, CHANNEL_ORDERBOOK)
         logger.info("Subscribed to: %s, %s", CHANNEL_TICKS, CHANNEL_ORDERBOOK)
 
-        emitter_task = asyncio.create_task(self._emit_periodic(), name="streaming-emitter")
+        emitter_task  = asyncio.create_task(self._emit_periodic(),     name="streaming-emitter")
+        snapshot_task = asyncio.create_task(self._snapshot_periodic(), name="streaming-snapshot")
 
         try:
             async for msg in pubsub.listen():
@@ -290,11 +365,17 @@ class StreamingAnalytics:
                 elif channel == CHANNEL_ORDERBOOK:
                     await self._handle_orderbook(payload)
         finally:
-            emitter_task.cancel()
-            try:
-                await emitter_task
-            except asyncio.CancelledError:
-                pass
+            for task in (emitter_task, snapshot_task):
+                task.cancel()
+                try:
+                    await task
+                except asyncio.CancelledError:
+                    pass
+            # One final snapshot on the way out so an orderly shutdown
+            # captures the most recent baseline.
+            written = await self._write_cvd_snapshot()
+            if written:
+                logger.info("final CVD snapshot persisted (%d instruments)", written)
             await pubsub.unsubscribe()
             await pubsub.aclose()
 
