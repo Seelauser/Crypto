@@ -11,20 +11,20 @@ declare module 'next-auth' {
   interface Session {
     user: {
       id:                string;
-      tier:              'free' | 'premium';
+      tier:              'free' | 'starter' | 'pro';
       tokenBalanceCents: number;
     } & DefaultSession['user'];
   }
 
   interface User {
-    tier:              'free' | 'premium';
+    tier:              'free' | 'starter' | 'pro';
     tokenBalanceCents: number;
   }
 }
 
 type AuthJwt = {
   id:                string;
-  tier:              'free' | 'premium';
+  tier:              'free' | 'starter' | 'pro';
   tokenBalanceCents: number;
 };
 
@@ -65,7 +65,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           id:                user.id,
           email:             user.email,
           name:              user.username,
-          tier:              user.tier as 'free' | 'premium',
+          tier:              user.tier as 'free' | 'starter' | 'pro',
           tokenBalanceCents: user.tokenLedger?.balanceCents ?? 0,
         };
       },

@@ -40,11 +40,11 @@ export async function notificationsRouter(app: FastifyInstance) {
     const userId = req.headers['x-user-id'] as string;
     const tier = req.headers['x-user-tier'] as string;
     if (!userId) return reply.status(401).send({ error: 'Unauthorized' });
-    if (tier !== 'premium') {
+    if (tier !== 'pro') {
       return reply.status(403).send({
         error: 'tier_gate',
         feature: 'telegram_notifications',
-        tierRequired: 'premium',
+        tierRequired: 'pro',
         upgradeUrl: '/billing/upgrade?from=telegram',
       });
     }

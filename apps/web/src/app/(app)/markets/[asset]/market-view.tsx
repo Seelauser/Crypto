@@ -308,7 +308,7 @@ function WsStatusBadge({ connected }: { connected: boolean }) {
 
 interface Props {
   asset: AssetClass;
-  tier: 'free' | 'premium';
+  tier: 'free' | 'starter' | 'pro';
 }
 
 // ─── Main Component ───────────────────────────────────────────────────────────
@@ -469,12 +469,12 @@ export default function MarketView({ asset, tier }: Props) {
             letterSpacing: '0.1em',
             padding: '3px 8px',
             borderRadius: 4,
-            border: `1px solid ${tier === 'premium' ? '#fbbf2440' : '#1f2128'}`,
-            background: tier === 'premium' ? '#fbbf2410' : '#13141a',
-            color: tier === 'premium' ? '#fbbf24' : '#5a5f6a',
+            border: `1px solid ${tier === 'pro' ? '#fbbf2440' : '#1f2128'}`,
+            background: tier === 'pro' ? '#fbbf2410' : '#13141a',
+            color: tier === 'pro' ? '#fbbf24' : '#5a5f6a',
           }}
         >
-          {tier === 'premium' ? 'PRO' : 'FREE'}
+          {tier === 'pro' ? 'PRO' : 'FREE'}
         </div>
       </div>
 
@@ -665,7 +665,7 @@ export default function MarketView({ asset, tier }: Props) {
                   }}
                 >
                   {tab.label}
-                  {tab.pro && tier !== 'premium' && (
+                  {tab.pro && tier !== 'pro' && (
                     <span style={{ fontSize: 8, color: '#fbbf24' }}>PRO</span>
                   )}
                 </button>
@@ -732,7 +732,7 @@ function ChartPaneAutoHeight({
   containerRef,
 }: {
   instrument: string;
-  tier: 'free' | 'premium';
+  tier: 'free' | 'starter' | 'pro';
   containerRef: RefObject<HTMLDivElement | null>;
 }) {
   const [chartHeight, setChartHeight] = useState(420);
@@ -760,7 +760,7 @@ function ChartPaneAutoHeight({
     <CvdChart
       instrument={instrument}
       height={chartHeight}
-      showRealTime={tier === 'premium'}
+      showRealTime={tier === 'pro'}
       tier={tier}
     />
   );

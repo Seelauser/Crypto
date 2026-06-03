@@ -17,7 +17,7 @@ export default async function WatchlistsPage() {
   return (
     <WatchlistClient
       watchlists={JSON.parse(JSON.stringify(watchlists))}
-      tier={((session.user as any).tier ?? 'free') as 'free' | 'premium'}
+      tier={((session.user as any).tier ?? 'free') as 'free' | 'starter' | 'pro'}
     />
   );
 }

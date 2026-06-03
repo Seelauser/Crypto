@@ -57,7 +57,7 @@ export default function SettingsPage() {
           <span><span style={{ color: '#5a5f6a' }}>Username: </span>{session?.user?.name}</span>
           <span><span style={{ color: '#5a5f6a' }}>Email: </span>{session?.user?.email}</span>
           <span><span style={{ color: '#5a5f6a' }}>Plan: </span>
-            <span style={{ color: tier === 'premium' ? '#22d3ee' : '#e6e8ee', textTransform: 'capitalize' }}>{tier}</span>
+            <span style={{ color: tier === 'pro' ? '#22d3ee' : '#e6e8ee', textTransform: 'capitalize' }}>{tier}</span>
           </span>
         </div>
       </section>
@@ -84,12 +84,12 @@ export default function SettingsPage() {
         <div style={{ marginBottom: 24, paddingTop: 16, borderTop: '1px solid #1f2128' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
             <div style={{ fontSize: 13, color: '#e6e8ee' }}>Telegram</div>
-            {tier !== 'premium' && <span style={{ border: '1px solid #fbbf24', color: '#fbbf24', fontSize: 10, padding: '1px 5px', borderRadius: 3, fontFamily: 'JetBrains Mono, monospace', textTransform: 'uppercase' }}>Pro</span>}
+            {tier !== 'pro' && <span style={{ border: '1px solid #fbbf24', color: '#fbbf24', fontSize: 10, padding: '1px 5px', borderRadius: 3, fontFamily: 'JetBrains Mono, monospace', textTransform: 'uppercase' }}>Pro</span>}
           </div>
           <div style={{ fontSize: 12, color: '#8a8f9b', marginBottom: 12 }}>
             Receive signal alerts in real time via Telegram bot.
           </div>
-          {tier !== 'premium' ? (
+          {tier !== 'pro' ? (
             <p style={{ fontSize: 12, color: '#5a5f6a' }}>Upgrade to Pro to connect Telegram.</p>
           ) : telegramLink ? (
             <div style={{ background: '#0a0a0b', borderRadius: 6, padding: 12, border: '1px solid #1f2128' }}>
@@ -111,9 +111,9 @@ export default function SettingsPage() {
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
             <Webhook size={13} color="#8a8f9b" />
             <div style={{ fontSize: 13, color: '#e6e8ee' }}>Outbound Webhook</div>
-            {tier !== 'premium' && <span style={{ border: '1px solid #fbbf24', color: '#fbbf24', fontSize: 10, padding: '1px 5px', borderRadius: 3, fontFamily: 'JetBrains Mono, monospace', textTransform: 'uppercase' }}>Pro</span>}
+            {tier !== 'pro' && <span style={{ border: '1px solid #fbbf24', color: '#fbbf24', fontSize: 10, padding: '1px 5px', borderRadius: 3, fontFamily: 'JetBrains Mono, monospace', textTransform: 'uppercase' }}>Pro</span>}
           </div>
-          {tier !== 'premium' ? (
+          {tier !== 'pro' ? (
             <p style={{ fontSize: 12, color: '#5a5f6a' }}>Upgrade to Pro for outbound webhooks (HMAC-signed JSON).</p>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -150,7 +150,7 @@ export default function SettingsPage() {
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
           <Key size={15} color="#8a8f9b" />
           <h2 style={{ fontSize: 13, fontWeight: 600, color: '#e6e8ee', margin: 0 }}>API Access</h2>
-          {tier !== 'premium' && <span style={{ border: '1px solid #fbbf24', color: '#fbbf24', fontSize: 10, padding: '1px 5px', borderRadius: 3, fontFamily: 'JetBrains Mono, monospace', textTransform: 'uppercase' }}>Pro</span>}
+          {tier !== 'pro' && <span style={{ border: '1px solid #fbbf24', color: '#fbbf24', fontSize: 10, padding: '1px 5px', borderRadius: 3, fontFamily: 'JetBrains Mono, monospace', textTransform: 'uppercase' }}>Pro</span>}
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: '#8a8f9b' }}>
           <AlertCircle size={13} color="#8a8f9b" />

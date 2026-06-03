@@ -187,7 +187,7 @@ export default function ScanBuilder({
   const [expandedPreset, setExpandedPreset] = useState<string | null>(null);
 
   function applyPreset(preset: Preset) {
-    if (preset.proOnly && tier !== 'premium') {
+    if (preset.proOnly && tier !== 'pro') {
       alert('This preset requires Pro. Upgrade to unlock cross-market scans.');
       return;
     }
@@ -234,7 +234,7 @@ export default function ScanBuilder({
       {showPresets && (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: 10, marginBottom: 20 }}>
           {PRESETS.map(preset => {
-            const locked   = preset.proOnly && tier !== 'premium';
+            const locked   = preset.proOnly && tier !== 'pro';
             const isActive = activePreset === preset.id;
             const isExpanded = expandedPreset === preset.id;
 

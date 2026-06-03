@@ -73,10 +73,10 @@ export async function POST(
   }
 
   // 4. Tier policy gate. Model selection itself happens inside callLlm; here we
-  //    only enforce the per-tier access policy: free users are metered by a
-  //    daily quota, premium users must hold a positive token balance.
-  if (tier === 'free') {
-    // ── Free: daily quota enforced via Redis (callLlm pins free → Haiku) ──
+  //    only enforce the per-tier access policy. Free + Starter are metered by
+  //    a daily Haiku quota; only Pro draws Sonnet against the token ledger.
+  if (tier !== 'pro') {
+    // ── Free / Starter: daily quota via Redis (callLlm pins them → Haiku) ──
     const today      = todayUtc();
     const redisKey   = `ai:daily:${userId}:${today}`;
 
@@ -105,9 +105,9 @@ export async function POST(
     });
 
   } else {
-    // ── Premium: must hold a positive token balance. callLlm would silently
-    //    downgrade an exhausted premium user to Haiku, but this route instead
-    //    surfaces a 402 so the client can prompt a top-up. ──
+    // ── Pro: must hold a positive token balance. callLlm would silently
+    //    downgrade an exhausted user to Haiku, but this route instead surfaces
+    //    a 402 so the client can prompt a top-up. ──
     const ledger = await db.tokenLedger.findUnique({
       where:  { userId },
       select: { balanceCents: true },
@@ -133,9 +133,9 @@ export async function POST(
       db,
       feature:      'signal_explanation',
       userId,
-      // Mirror the tier gate above: only 'free' takes the free path; every
-      // other tier is metered as premium against the token ledger.
-      userTier:     tier === 'free' ? 'free' : 'premium',
+      // Mirror the tier gate above: only Pro is metered as premium against the
+      // token ledger (Sonnet). Free + Starter take the Haiku quota path.
+      userTier:     tier === 'pro' ? 'premium' : 'free',
       maxTokens:    512,
       systemBlocks: [SYSTEM_PROMPT_CACHE_BLOCK],
       messages: (model) => [{

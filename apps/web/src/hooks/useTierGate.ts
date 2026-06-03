@@ -8,7 +8,7 @@ export type GatedFeature = keyof typeof LIMITS.free;
 
 export function useTierGate(tier: UserTier) {
   const router = useRouter();
-  const isPro  = tier === 'premium';
+  const isPro  = tier === 'pro';
 
   /** Returns true if the tier can use this feature. */
   function can(feature: GatedFeature): boolean {

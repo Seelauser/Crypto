@@ -29,7 +29,7 @@ export default async function BillingPage() {
 
   return (
     <BillingClient
-      tier={user.tier as 'free' | 'premium'}
+      tier={user.tier as 'free' | 'starter' | 'pro'}
       balanceCents={ledger?.balanceCents ?? 0}
       subscription={user.subscription ? JSON.parse(JSON.stringify(user.subscription)) : null}
       recentCalls={JSON.parse(JSON.stringify(recentCalls))}

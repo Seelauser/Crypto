@@ -59,13 +59,13 @@ export async function POST(req: NextRequest) {
         create: { userId, expiresAt, source: 'coupon' },
         update: { expiresAt, source: 'coupon' },
       }),
-      db.user.update({ where: { id: userId }, data: { tier: 'premium' } }),
+      db.user.update({ where: { id: userId }, data: { tier: 'pro' } }),
     ]);
 
     return NextResponse.json({
       success: true,
       message: `🎉 Pro access granted for ${days} days!`,
-      tier: 'premium',
+      tier: 'pro',
       expiresAt: expiresAt.toISOString(),
       daysRemaining: days,
     });

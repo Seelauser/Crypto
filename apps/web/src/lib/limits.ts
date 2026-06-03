@@ -1,5 +1,32 @@
 import type { UserTier } from '@orderflow/types';
 
+// ─── Tier ranking ─────────────────────────────────────────────────────────────
+// Single source of truth for "is tier A at least tier B". Use `tierAtLeast`
+// for any "this needs a paid plan" gate so the three tiers stay ordered in one
+// place rather than scattered `=== 'pro'` comparisons.
+
+export const TIER_RANK: Record<UserTier, number> = { free: 0, starter: 1, pro: 2 };
+
+export function tierAtLeast(userTier: UserTier, required: UserTier): boolean {
+  return TIER_RANK[userTier] >= TIER_RANK[required];
+}
+
+/**
+ * Map any legacy/unknown tier string to a valid UserTier. The pre-rework enum
+ * used 'premium'; a stale JWT or row could still carry it during rollout, so we
+ * fold 'premium' → 'pro' (the behavior-preserving target) and anything else → 'free'.
+ */
+export function normalizeTier(tier: string | null | undefined): UserTier {
+  if (tier === 'pro' || tier === 'premium') return 'pro';
+  if (tier === 'starter') return 'starter';
+  return 'free';
+}
+
+// ─── Feature limits ───────────────────────────────────────────────────────────
+// `pro` is the superset (identical to the old `premium`), so existing paid
+// users migrated premium→pro keep every feature. `starter` is the new middle
+// tier (see ORDERFLOW BEAST REWORK MASTER §3.1).
+
 export const LIMITS = {
   free: {
     signal_setups_max: 3,
@@ -22,9 +49,32 @@ export const LIMITS = {
     workspaces_max: 1,
     charts_per_workspace_max: 1,
   },
-  premium: {
+  starter: {
     signal_setups_max: Infinity,
     instruments_per_setup_max: 10,
+    scans_per_24h: 10,
+    scan_scope: 'cross_market' as const,
+    watchlists_max: Infinity,
+    watchlist_instruments_max: Infinity,
+    // Telegram + outbound webhook are Pro-only (§3.1, §12.2).
+    notification_channels: ['email', 'browser_push'] as string[],
+    refresh_latency_seconds: 0,
+    history_days: 30,
+    // Starter AI = Haiku quota only (§3.1).
+    ai_calls_per_day: 10,
+    ai_models_allowed: ['claude-haiku-4-5'] as string[],
+    footprint_chart: true,
+    dom_ladder: true,
+    heatmap: true,
+    api_access: false,
+    webhook_outbound: false,
+    csv_export: false,
+    workspaces_max: 3,
+    charts_per_workspace_max: 10,
+  },
+  pro: {
+    signal_setups_max: Infinity,
+    instruments_per_setup_max: Infinity,
     scans_per_24h: Infinity,
     scan_scope: 'cross_market' as const,
     watchlists_max: Infinity,
@@ -59,12 +109,22 @@ export function canUseFeature(tier: UserTier, feature: keyof typeof LIMITS.free)
   return true;
 }
 
-export function buildTierGateError(feature: string, upgradeSlug: string) {
+/**
+ * Standard tier-gate error body. `tierRequired` defaults to 'pro' (the
+ * behavior-preserving default for gates that were `=== 'pro'`); pass
+ * 'starter' for middle-tier features.
+ */
+export function buildTierGateError(
+  feature: string,
+  upgradeSlug: string,
+  tierRequired: UserTier = 'pro',
+) {
+  const tierLabel = tierRequired === 'pro' ? 'Pro' : 'Starter';
   return {
     error: 'tier_gate',
-    message: `This feature requires a Pro subscription.`,
+    message: `This feature requires a ${tierLabel} subscription.`,
     feature,
-    tierRequired: 'premium' as UserTier,
+    tierRequired,
     upgradeUrl: `/billing/upgrade?from=${upgradeSlug}`,
   };
 }

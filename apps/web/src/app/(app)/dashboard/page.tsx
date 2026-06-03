@@ -41,7 +41,7 @@ type WatchlistRow = {
 // --- DashboardHeader ----------------------------------------------------------
 
 function TierBadge({ tier }: { tier: string }) {
-  if (tier === 'premium') {
+  if (tier === 'pro') {
     return (
       <span className="inline-flex items-center gap-1 rounded-full border border-[#fbbf24]/30 bg-[#fbbf24]/10 px-2.5 py-0.5 text-xs font-semibold text-[#fbbf24]">
         Pro
@@ -81,7 +81,7 @@ function DashboardHeader({
       </div>
 
       <div className="flex items-center gap-2 sm:gap-4">
-        {tier === 'premium' && (
+        {tier === 'pro' && (
           <div className="flex items-center gap-2 rounded-lg border border-[#1f2128] bg-[#0a0a0b] px-3 py-1.5">
             <span className="hidden sm:inline text-xs text-[#8a8f9b]">AI Credits</span>
             <span className="text-sm font-semibold tabular-nums text-[#22d3ee]">

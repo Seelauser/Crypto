@@ -250,7 +250,10 @@ async function handleSignalTriggered(raw: string): Promise<void> {
     return;
   }
 
-  const tier = user.tier as 'free' | 'premium';
+  // Map the user's subscription tier (free | starter | pro) onto the billing
+  // dimension callLlm understands. Only Pro draws Sonnet against the token
+  // ledger; Free + Starter take the Haiku daily-quota path.
+  const billingTier: 'free' | 'premium' = user.tier === 'pro' ? 'premium' : 'free';
 
   // b & c. Generate AI explanation. The prompt builders crash on snapshots
   // missing optional numeric fields, and Anthropic calls can fail when no
@@ -259,7 +262,7 @@ async function handleSignalTriggered(raw: string): Promise<void> {
   let aiResult: Awaited<ReturnType<typeof generateExplanation>> = null;
   try {
     if (process.env.ANTHROPIC_API_KEY) {
-      aiResult = await generateExplanation(user_id, tier, snapshot, setup.name);
+      aiResult = await generateExplanation(user_id, billingTier, snapshot, setup.name);
     }
   } catch (err) {
     console.error('[dispatcher] generateExplanation failed (continuing without AI):', err);
@@ -293,6 +296,10 @@ async function handleSignalTriggered(raw: string): Promise<void> {
     const config = channel.config as Record<string, string>;
 
     if (!channelKinds.includes(kind)) continue;
+
+    // Telegram + outbound webhook are Pro-only (rework spec §12.2). Defense in
+    // depth: skip them for non-Pro users even if a stale channel row exists.
+    if ((kind === 'telegram' || kind === 'webhook') && user.tier !== 'pro') continue;
 
     try {
       if (kind === 'email') {

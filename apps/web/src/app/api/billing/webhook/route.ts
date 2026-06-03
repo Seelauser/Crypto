@@ -30,10 +30,14 @@ export async function POST(req: NextRequest) {
       const userId = session.metadata?.userId;
       if (!userId || session.mode !== 'subscription') break;
 
-      await db.$transaction([
+      // Which tier was purchased. Sessions created before the 3-tier rollout
+      // carry no `tier` metadata → default to 'pro' (the old single product).
+      const tier: 'starter' | 'pro' = session.metadata?.tier === 'starter' ? 'starter' : 'pro';
+
+      const ops: any[] = [
         db.user.update({
           where: { id: userId },
-          data: { tier: 'premium' },
+          data: { tier },
         }),
         db.subscription.upsert({
           where: { userId },
@@ -49,13 +53,20 @@ export async function POST(req: NextRequest) {
             status: 'active',
           },
         }),
-        // Credit $10 included token balance
-        db.tokenLedger.upsert({
-          where: { userId },
-          create: { userId, balanceCents: MONTHLY_TOKEN_CREDIT_CENTS },
-          update: { balanceCents: { increment: MONTHLY_TOKEN_CREDIT_CENTS } },
-        }),
-      ]);
+      ];
+
+      // Only Pro includes the $10 monthly token credit; Starter gets none.
+      if (tier === 'pro') {
+        ops.push(
+          db.tokenLedger.upsert({
+            where: { userId },
+            create: { userId, balanceCents: MONTHLY_TOKEN_CREDIT_CENTS },
+            update: { balanceCents: { increment: MONTHLY_TOKEN_CREDIT_CENTS } },
+          }),
+        );
+      }
+
+      await db.$transaction(ops);
       break;
     }
 
@@ -64,13 +75,18 @@ export async function POST(req: NextRequest) {
       // Renewal — top up token credit to at least $10
       const sub = await db.subscription.findFirst({
         where: { stripeSubscriptionId: invoice.subscription as string },
-        select: { userId: true },
+        select: { userId: true, user: { select: { tier: true } } },
       });
       if (!sub) break;
 
-      const ledger = await db.tokenLedger.findUnique({ where: { userId: sub.userId } });
+      // Only Pro carries a monthly token credit; Starter renewals just refresh
+      // the subscription period.
+      const isPro = sub.user?.tier === 'pro';
+      const ledger = isPro
+        ? await db.tokenLedger.findUnique({ where: { userId: sub.userId } })
+        : null;
       const currentBalance = ledger?.balanceCents ?? 0;
-      const topUp = Math.max(0, MONTHLY_TOKEN_CREDIT_CENTS - currentBalance);
+      const topUp = isPro ? Math.max(0, MONTHLY_TOKEN_CREDIT_CENTS - currentBalance) : 0;
 
       await db.$transaction([
         db.subscription.update({

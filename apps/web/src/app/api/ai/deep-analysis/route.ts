@@ -167,8 +167,8 @@ export async function POST(req: NextRequest): Promise<Response> {
   const userId = session.user.id;
   const tier   = ((session.user as any).tier ?? 'free') as UserTier;
 
-  // ── 1a. Premium tier gate ─────────────────────────────────────────────────
-  if (tier !== 'premium') {
+  // ── 1a. Pro tier gate (deep analysis = Opus, Pro-only) ────────────────────
+  if (tier !== 'pro') {
     return NextResponse.json(
       buildTierGateError('deep_analysis', 'deep_analysis'),
       { status: 403 },

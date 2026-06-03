@@ -69,7 +69,7 @@ export default function TapeNarrator({ instrument, tier, recentPrints }: Props) 
 
   // Auto-refresh for premium every 60s
   useEffect(() => {
-    if (tier !== 'premium') return;
+    if (tier !== 'pro') return;
     intervalRef.current = setInterval(fetchNarration, 60_000);
     return () => { if (intervalRef.current) clearInterval(intervalRef.current); };
   }, [instrument, tier]);
@@ -107,7 +107,7 @@ export default function TapeNarrator({ instrument, tier, recentPrints }: Props) 
         {model && (
           <div style={{ display: 'flex', gap: 8, marginTop: 5, fontSize: 10, color: '#5a5f6a', fontFamily: 'JetBrains Mono, monospace' }}>
             <span>Haiku · ${(costCents / 100).toFixed(5)}</span>
-            {tier === 'premium' && <span>auto-refresh 60s</span>}
+            {tier === 'pro' && <span>auto-refresh 60s</span>}
             {tier === 'free' && <span>manual only</span>}
           </div>
         )}

@@ -227,7 +227,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
               batched: false,
             },
           });
-          if (tier === 'premium') await deductBalance(userId, costCents);
+          if (tier === 'pro') await deductBalance(userId, costCents);
         } catch (err) {
           console.error('[correlation] billing error:', err);
         }

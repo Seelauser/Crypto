@@ -28,7 +28,7 @@ export default function ScansPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          scope:      tier === 'premium' ? scope : 'single_market',
+          scope:      tier === 'pro' ? scope : 'single_market',
           market,
           conditions: {
             logic,

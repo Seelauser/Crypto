@@ -190,7 +190,7 @@ export interface ScanResultRow {
 
 // ─── Users / Auth ─────────────────────────────────────────────────────────────
 
-export type UserTier = 'free' | 'premium';
+export type UserTier = 'free' | 'starter' | 'pro';
 
 export interface SessionUser {
   id: string;

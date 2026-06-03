@@ -26,7 +26,7 @@ interface PrintRow {
 
 interface Props {
   instrument: string;
-  tier: 'free' | 'premium';
+  tier: 'free' | 'starter' | 'pro';
   minNotionalUsd?: number;
 }
 
@@ -182,7 +182,7 @@ function TapeRow({ row }: RowProps) {
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export default function TapePanel({ instrument, tier, minNotionalUsd }: Props) {
-  const defaultThreshold = tier === 'premium'
+  const defaultThreshold = tier === 'pro'
     ? DEFAULT_MIN_NOTIONAL_PREMIUM
     : DEFAULT_MIN_NOTIONAL_FREE;
 

@@ -27,7 +27,7 @@ interface HeatCell {
 interface Props {
   instrument: string;
   height?: number;
-  tier: 'free' | 'premium';
+  tier: 'free' | 'starter' | 'pro';
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -88,7 +88,7 @@ export default function OrderBookHeatmap({
   const lastMidRef      = useRef<number>(0);
   const [dimensions, setDimensions] = useState({ w: 800, h: height });
 
-  const isPremium = tier === 'premium';
+  const isPremium = tier === 'pro';
 
   // ── WebSocket: only subscribe when premium ─────────────────────────────────
   const { lastMessage } = useMarketSocket(

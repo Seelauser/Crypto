@@ -260,10 +260,11 @@ async function main() {
   const date = todayDateString();
   console.log(`[daily-recap] Starting daily recap generation for ${date}...`);
 
-  // 1. Load all premium users with at least one active (armed) signal setup
+  // 1. Load all Pro users with at least one active (armed) signal setup.
+  //    Daily recap is a Pro-tier feature (Opus-generated); Starter is excluded.
   const premiumUsers = await db.user.findMany({
     where: {
-      tier:   'premium',
+      tier:   'pro',
       status: 'active',
       signalSetups: {
         some: { status: { in: ['armed', 'paused'] } },

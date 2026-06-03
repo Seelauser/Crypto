@@ -24,7 +24,7 @@ interface LlmCall {
 }
 
 interface Props {
-  tier: 'free' | 'premium';
+  tier: 'free' | 'starter' | 'pro';
   balanceCents: number;
   subscription: { status: string; currentPeriodEnd: string } | null;
   recentCalls: LlmCall[];
@@ -82,7 +82,7 @@ export default function BillingClient({ tier, balanceCents, subscription, recent
       if (res.ok) {
         setCouponStatus({ type: 'success', message: data.message });
         setCouponCode('');
-        try { await update({ tier: data.tier ?? 'premium' }); } catch {}
+        try { await update({ tier: data.tier ?? 'pro' }); } catch {}
         setTimeout(() => window.location.reload(), 1500);
       } else {
         setCouponStatus({ type: 'error', message: data.error || 'Failed to apply coupon' });
@@ -105,21 +105,21 @@ export default function BillingClient({ tier, balanceCents, subscription, recent
             <CreditCard size={16} color="#8a8f9b" />
             <span style={{ fontSize: 12, color: '#8a8f9b', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Plan</span>
           </div>
-          <div style={{ fontSize: 22, fontWeight: 700, color: tier === 'premium' ? '#22d3ee' : '#e6e8ee', fontFamily: 'JetBrains Mono, monospace', marginBottom: 4 }}>
-            {tier === 'premium' ? 'Pro' : 'Free'}
+          <div style={{ fontSize: 22, fontWeight: 700, color: tier !== 'free' ? '#22d3ee' : '#e6e8ee', fontFamily: 'JetBrains Mono, monospace', marginBottom: 4 }}>
+            {tier.charAt(0).toUpperCase() + tier.slice(1)}
           </div>
-          {tier === 'premium' && subscription && (
+          {tier !== 'free' && subscription && (
             <div style={{ fontSize: 12, color: '#8a8f9b' }}>
               Renews {new Date(subscription.currentPeriodEnd).toLocaleDateString()}
             </div>
           )}
-          {tier === 'free' && (
+          {tier !== 'pro' && (
             <button onClick={handleUpgrade}
               style={{ marginTop: 12, background: '#22d3ee', color: '#0a0a0b', border: 'none', borderRadius: 6, padding: '8px 16px', fontWeight: 700, fontSize: 13, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, transition: 'opacity 150ms' }}
               onMouseEnter={(e) => e.currentTarget.style.opacity = '0.9'}
               onMouseLeave={(e) => e.currentTarget.style.opacity = '1'}
             >
-              <Zap size={13} /> Upgrade — $69/mo
+              <Zap size={13} /> Upgrade to Pro — $49/mo
             </button>
           )}
         </div>
@@ -130,7 +130,7 @@ export default function BillingClient({ tier, balanceCents, subscription, recent
             <Zap size={16} color="#8a8f9b" />
             <span style={{ fontSize: 12, color: '#8a8f9b', textTransform: 'uppercase', letterSpacing: '0.06em' }}>AI Credits</span>
           </div>
-          {tier === 'premium' ? (
+          {tier === 'pro' ? (
             <>
               <div style={{ fontSize: 22, fontWeight: 700, color: balanceCents > 200 ? '#22c55e' : '#f97366', fontFamily: 'JetBrains Mono, monospace', marginBottom: 4 }}>
                 {formatCents(balanceCents)}
@@ -262,7 +262,7 @@ export default function BillingClient({ tier, balanceCents, subscription, recent
       </div>
 
       {/* Recent LLM calls */}
-      {tier === 'premium' && recentCalls.length > 0 && (
+      {tier === 'pro' && recentCalls.length > 0 && (
         <div style={{ background: '#13141a', border: '1px solid #1f2128', borderRadius: 8, overflow: 'hidden' }}>
           <div style={{ padding: '14px 16px', borderBottom: '1px solid #1f2128', fontSize: 13, fontWeight: 600, color: '#e6e8ee' }}>
             Recent AI calls

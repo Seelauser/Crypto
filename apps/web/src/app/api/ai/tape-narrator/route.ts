@@ -187,8 +187,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     );
   }
 
-  // ── Free tier: daily call cap ─────────────────────────────────────────────
-  if (tier === 'free') {
+  // ── Free + Starter: daily call cap (Pro is unlimited) ─────────────────────
+  if (tier !== 'pro') {
     const dailyCount = await getDailyCount(userId);
     if (dailyCount >= FREE_DAILY_LIMIT) {
       return NextResponse.json(
@@ -204,7 +204,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
   // Mark the cooldown before calling the API to avoid burst races.
   await setCooldown(userId, instrument);
-  if (tier === 'free') {
+  if (tier !== 'pro') {
     await incrementDailyCount(userId);
   }
 
@@ -244,7 +244,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
           batched: false,
         },
       });
-      if (tier === 'premium') {
+      if (tier === 'pro') {
         await deductBalance(userId, costCents);
       }
     } catch (err) {

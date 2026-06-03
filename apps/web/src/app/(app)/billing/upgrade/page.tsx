@@ -22,7 +22,7 @@ export default async function UpgradePage({
   if (!user) redirect('/login');
 
   // Already Pro → send them to the billing dashboard, not the upgrade pitch.
-  if (user.tier === 'premium') redirect('/billing');
+  if (user.tier === 'pro') redirect('/billing');
 
   const sp = await searchParams;
   const fromRaw = Array.isArray(sp.from) ? sp.from[0] : sp.from;

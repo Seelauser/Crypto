@@ -107,12 +107,12 @@ function DesktopSidebar({
         className="mt-2 mb-1 text-center font-mono"
         style={{
           fontSize: 9,
-          color: user.tier === 'premium' ? '#22d3ee' : '#5a5f6a',
+          color: user.tier !== 'free' ? '#22d3ee' : '#5a5f6a',
           textTransform: 'uppercase',
           letterSpacing: '0.08em',
         }}
       >
-        {user.tier === 'premium' ? 'PRO' : 'FREE'}
+        {user.tier.toUpperCase()}
       </div>
     </nav>
   );
@@ -149,12 +149,12 @@ function MobileTopBar({
         className="font-mono"
         style={{
           fontSize: 9,
-          color: user.tier === 'premium' ? '#22d3ee' : '#5a5f6a',
+          color: user.tier !== 'free' ? '#22d3ee' : '#5a5f6a',
           textTransform: 'uppercase',
           letterSpacing: '0.08em',
         }}
       >
-        {user.tier === 'premium' ? 'PRO' : 'FREE'}
+        {user.tier.toUpperCase()}
       </span>
     </div>
   );

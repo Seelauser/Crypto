@@ -6,11 +6,11 @@ export async function POST() {
   const session = await auth();
   if (!session?.user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-  if ((session.user as any).tier !== 'premium') {
+  if ((session.user as any).tier !== 'pro') {
     return NextResponse.json({
       error: 'tier_gate',
       feature: 'telegram_notifications',
-      tierRequired: 'premium',
+      tierRequired: 'pro',
       upgradeUrl: '/billing/upgrade?from=telegram',
     }, { status: 403 });
   }

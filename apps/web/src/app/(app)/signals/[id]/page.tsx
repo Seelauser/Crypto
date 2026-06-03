@@ -32,7 +32,7 @@ export default async function SignalDetailPage({ params }: Props) {
 
   if (!setup) notFound();
 
-  const tier = ((session.user as any).tier ?? 'free') as 'free' | 'premium';
+  const tier = ((session.user as any).tier ?? 'free') as 'free' | 'starter' | 'pro';
 
   return (
     <SignalDetailClient

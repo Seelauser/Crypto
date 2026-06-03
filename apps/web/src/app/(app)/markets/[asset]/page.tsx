@@ -1,5 +1,6 @@
 import { redirect } from 'next/navigation';
 import { auth } from '@/lib/auth';
+import { normalizeTier } from '@/lib/limits';
 import MarketView from './market-view';
 import type { AssetClass } from '@orderflow/types';
 
@@ -50,8 +51,7 @@ export default async function MarketsAssetPage({
   const session = await auth();
   if (!session?.user) redirect('/login');
 
-  const tier: 'free' | 'premium' =
-    ((session.user as any).tier as string) === 'premium' ? 'premium' : 'free';
+  const tier = normalizeTier((session.user as any).tier);
 
   return <MarketView asset={asset} tier={tier} />;
 }

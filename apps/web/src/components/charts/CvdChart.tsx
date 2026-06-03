@@ -18,7 +18,7 @@ interface Props {
   instrument: string;
   height?: number;
   showRealTime?: boolean;
-  tier?: 'free' | 'premium';
+  tier?: 'free' | 'starter' | 'pro';
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -81,7 +81,7 @@ export default function CvdChart({
   const [error, setError]     = useState<string | null>(null);
 
   // Only subscribe to real-time CVD when premium and showRealTime
-  const isRealTime = showRealTime && tier === 'premium';
+  const isRealTime = showRealTime && tier === 'pro';
   const isCrypto   = isCryptoInstrument(instrument);
 
   // Pass '__disabled__' so useCvdStream skips subscription when not needed

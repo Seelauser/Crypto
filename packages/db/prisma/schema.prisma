@@ -9,7 +9,8 @@ datasource db {
 
 enum UserTier {
   free
-  premium
+  starter
+  pro
 }
 
 enum UserStatus {

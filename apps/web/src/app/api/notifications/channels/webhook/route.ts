@@ -13,8 +13,8 @@ export async function POST(req: NextRequest) {
   const session = await auth();
   if (!session?.user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-  if ((session.user as any).tier !== 'premium') {
-    return NextResponse.json({ error: 'tier_gate', feature: 'webhook_outbound', tierRequired: 'premium' }, { status: 403 });
+  if ((session.user as any).tier !== 'pro') {
+    return NextResponse.json({ error: 'tier_gate', feature: 'webhook_outbound', tierRequired: 'pro' }, { status: 403 });
   }
 
   const body = await req.json().catch(() => null);

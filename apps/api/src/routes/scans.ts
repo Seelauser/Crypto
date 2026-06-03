@@ -18,7 +18,12 @@ const LIMITS = {
     scope:         'single_market' as const,
     history_days:  7,
   },
-  premium: {
+  starter: {
+    scans_per_24h: 10,
+    scope:         'cross_market' as const,
+    history_days:  30,
+  },
+  pro: {
     scans_per_24h: Infinity,
     scope:         'cross_market' as const,
     history_days:  Infinity,
@@ -33,11 +38,11 @@ function getUserContext(req: FastifyRequest): { userId: string; userTier: UserTi
   return { userId, userTier };
 }
 
-function tierGateResponse(reply: FastifyReply, feature: string) {
+function tierGateResponse(reply: FastifyReply, feature: string, tierRequired: UserTier = 'pro') {
   return reply.code(403).send({
     error:        'tier_gate',
     feature,
-    tierRequired: 'premium',
+    tierRequired,
     upgradeUrl:   `/billing/upgrade?from=${feature}`,
   });
 }
@@ -96,19 +101,21 @@ export async function scansRouter(fastify: FastifyInstance): Promise<void> {
       const { userId, userTier } = getUserContext(req);
       const body = req.body;
 
-      // Gate: scope restriction for free users
+      // Gate: cross-market scope requires a paid tier (starter+)
       if (body.scope === 'cross_market' && userTier === 'free') {
-        return tierGateResponse(reply, 'scan_scope_cross_market');
+        return tierGateResponse(reply, 'scan_scope_cross_market', 'starter');
       }
 
-      // Gate: daily quota for free users
-      if (userTier === 'free') {
+      // Gate: daily scan quota — finite for free + starter, unlimited for pro
+      const dailyQuota = LIMITS[userTier].scans_per_24h;
+      if (Number.isFinite(dailyQuota)) {
         const quotaKey    = `quota:scans:${userId}:${todayKey()}`;
         const currentStr  = await redis.get(quotaKey);
         const current     = currentStr ? parseInt(currentStr, 10) : 0;
 
-        if (current >= LIMITS.free.scans_per_24h) {
-          return tierGateResponse(reply, 'scans_per_24h');
+        if (current >= dailyQuota) {
+          // Free → suggest Starter; Starter → suggest Pro for unlimited.
+          return tierGateResponse(reply, 'scans_per_24h', userTier === 'free' ? 'starter' : 'pro');
         }
 
         // Atomically increment; set TTL on first write to guarantee expiry

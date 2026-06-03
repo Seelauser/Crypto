@@ -51,10 +51,10 @@ These are ordered by impact-per-hour.
 
 | # | Item | Effort | Notes |
 |---|---|---|---|
+| **P2 activation** | Enable Starter purchase: create the $19 Stripe product → set `STRIPE_PRICE_STARTER`, add a 3-plan `/plan` UI. Backend already accepts `{tier}` in `/api/billing/checkout`. | ~2 h | Owner provides Stripe price ID; UI is additive/non-breaking |
+| **P2-2 / P2-4** | Chart-tier middleware + WS gateway tier enforcement | ~3 h | **Deferred into the chart-engine phase** — the premium channels they gate (footprint/derivatives) and the WS auth token don't exist until Phase 4/5 |
 | **E7** | Per-page mobile audit | ~4 h | ARCHITECTURE.md §11 Tier 4 #12 |
 | **E8** | ESLint flat-config migration | ~1 h | ARCHITECTURE.md §11 Tier 5 #18 |
-| **P1-7** | Tier enum migration `free\|premium` → `free\|starter\|pro` | ~1 h | Breaking; saved for Phase 2 bundle |
-| **Phase 2** | Full 3-tier system rollout | ~6–10 h | Breaking, well-scoped; coordinated PR |
 
 #### Done since previous picklist (move from A to ✓)
 
@@ -66,6 +66,8 @@ These are ordered by impact-per-hour.
 - ✅ **P1-3..1-6** 4 additive hypertables (this session, `f7a87c0`)
 - ✅ **E6** Persisted CVD baselines (session 23, `2808d64` — Redis hash `streaming:cvd_snapshot`, 60s cadence, 24h staleness guard)
 - ✅ **C2** All 3 LLM callers routed through shared `callLlm()` (session 24, `8009f04` — new `@orderflow/llm` package; dispatcher + daily-recap + explain route now share one billing/audit path; −513 lines of duplicated logic)
+- ✅ **C3** `/admin` LLM cost-center KPI (session 24, `d5bcfee` — spend + cache-hit + savings, `ADMIN_USERNAMES` allowlist)
+- ✅ **P1-7 + Phase 2 backend** 3-tier system `free\|starter\|pro` (session 24 — **breaking, behavior-preserving**: existing `premium` users migrate → `pro`, keep all features). UserTier enum + `tier_migration.sql`, `limits.ts` rewrite (`TIER_RANK`/`tierAtLeast`/`normalizeTier` + starter column), all `premium`→`pro` gates, tier-aware Stripe checkout/webhook (`{tier}` metadata, $10 credit Pro-only), Telegram/webhook/CSV/deep-analysis pinned Pro, Starter gets unlimited setups + 10 scans/day + cross-market + 30d history + Haiku AI. **Not yet deployed** — see deploy steps below. P2-2/P2-4 deferred to chart phase.
 
 #### Prompt caching (group) — gate authored, awaits a real key
 
@@ -79,7 +81,7 @@ x-api-key`.
 | # | Item | Effort | Why |
 |---|---|---|---|
 | ~~**C2**~~ | ✅ Done (session 24, `8009f04`). All 3 callers route through `callLlm()` in the new `@orderflow/llm` package — shared ledger debit, audit row, tier gating + free/exhausted-balance fallback, ephemeral caching. | — | — |
-| **C3** | Cost-center / `/admin` KPI for cache-hit rate from `llm_calls.cache_read_input_tokens`. | ~1 h | Without this, future regressions are invisible. Now that all calls log through one path (C2), every call reliably writes `llm_calls`. |
+| ~~**C3**~~ | ✅ Done (session 24, `d5bcfee`). `/admin` LLM cost-center: spend + cache-hit rate + savings from `llm_calls`, 24h/7d/30d, by model/feature. Gated by `ADMIN_USERNAMES` allowlist (fail-closed). | — | — |
 | **C4** | Sonnet-tier features: per-feature prompt in a second cached system block. | ~1 h | Sonnet's 2048-token bar is easier to clear feature-by-feature. |
 | **C5** | Pre-warm with `max_tokens: 0` on `notification-dispatcher` + `daily-recap` boot. | ~30 min | Eliminates first-call cache-miss latency. |
 

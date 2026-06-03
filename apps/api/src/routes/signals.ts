@@ -10,7 +10,12 @@ const LIMITS = {
     instruments_per_setup_max: 5,
     history_days:              7,
   },
-  premium: {
+  starter: {
+    signal_setups_max:         Infinity,
+    instruments_per_setup_max: 10,
+    history_days:              30,
+  },
+  pro: {
     signal_setups_max:         Infinity,
     instruments_per_setup_max: Infinity,
     history_days:              Infinity,
@@ -25,11 +30,11 @@ function getUserContext(req: FastifyRequest): { userId: string; userTier: UserTi
   return { userId, userTier };
 }
 
-function tierGateResponse(reply: FastifyReply, feature: string) {
+function tierGateResponse(reply: FastifyReply, feature: string, tierRequired: UserTier = 'pro') {
   return reply.code(403).send({
     error:        'tier_gate',
     feature,
-    tierRequired: 'premium',
+    tierRequired,
     upgradeUrl:   `/billing/upgrade?from=${feature}`,
   });
 }

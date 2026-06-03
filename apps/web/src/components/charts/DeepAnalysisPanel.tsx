@@ -132,7 +132,7 @@ export default function DeepAnalysisPanel({ instrument, tier }: Props) {
   const [error, setError]         = useState<string | null>(null);
   const abortRef                  = useRef<AbortController | null>(null);
 
-  const isPro = tier === 'premium';
+  const isPro = tier === 'pro';
 
   const handleAnalyze = useCallback(async () => {
     if (!isPro || streaming) return;
