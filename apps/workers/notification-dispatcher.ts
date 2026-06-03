@@ -9,11 +9,11 @@
  *         (or: tsx notification-dispatcher.ts)
  */
 
-import Anthropic from '@anthropic-ai/sdk';
 import Redis from 'ioredis';
 import webpush from 'web-push';
 import { PrismaClient } from '@prisma/client';
 import { Resend } from 'resend';
+import { callLlm, type LlmModel } from '@orderflow/llm';
 import {
   buildSignalExplanationPrompt,
   buildSignalExplanationHaikuPrompt,
@@ -23,8 +23,7 @@ import type { SignalSnapshot } from '@orderflow/types';
 
 // ─── Clients ──────────────────────────────────────────────────────────────────
 
-const db        = new PrismaClient({ log: ['error'] });
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+const db = new PrismaClient({ log: ['error'] });
 
 let _resend: Resend | null = null;
 const resend = {
@@ -56,16 +55,7 @@ if (process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY) {
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const FREE_AI_QUOTA  = 10;
-const MODEL_HAIKU    = 'claude-haiku-4-5'  as const;
-const MODEL_SONNET   = 'claude-sonnet-4-6' as const;
 const BOT_TOKEN      = process.env.TELEGRAM_BOT_TOKEN ?? '';
-
-const MODEL_PRICE_MAP = {
-  [MODEL_HAIKU]: { input: 0.100, output: 0.500, cacheRead: 0.050, cacheWrite: 0.125 },
-  [MODEL_SONNET]:{ input: 0.300, output: 1.500, cacheRead: 0.015, cacheWrite: 0.375 },
-} as const;
-
-type SupportedModel = keyof typeof MODEL_PRICE_MAP;
 
 // ─── Inbound Redis message shape ──────────────────────────────────────────────
 
@@ -75,24 +65,6 @@ interface SignalTriggeredMessage {
   instrument: string;
   snapshot:   SignalSnapshot;
   ts:         number;
-}
-
-// ─── Cost helpers ─────────────────────────────────────────────────────────────
-
-interface UsageTokens {
-  input_tokens:                number;
-  output_tokens:               number;
-  cache_creation_input_tokens?: number;
-  cache_read_input_tokens?:    number;
-}
-
-function computeCostCents(model: SupportedModel, usage: UsageTokens): number {
-  const p          = MODEL_PRICE_MAP[model];
-  const input      = (usage.input_tokens / 1000) * p.input;
-  const output     = (usage.output_tokens / 1000) * p.output;
-  const cacheRead  = ((usage.cache_read_input_tokens  ?? 0) / 1000) * p.cacheRead;
-  const cacheWrite = ((usage.cache_creation_input_tokens ?? 0) / 1000) * p.cacheWrite;
-  return Math.ceil(input + output + cacheRead + cacheWrite);
 }
 
 function todayUtc(): string {
@@ -106,11 +78,10 @@ async function generateExplanation(
   tier: 'free' | 'premium',
   snapshot: SignalSnapshot,
   setupName: string,
-): Promise<{ explanation: string; model: SupportedModel; costCents: number } | null> {
-  let model: SupportedModel;
-
+): Promise<{ explanation: string; model: LlmModel; costCents: number } | null> {
+  // Free tier: enforce the daily AI quota here (Redis counter + DB mirror)
+  // before spending. Premium metering happens inside callLlm via the ledger.
   if (tier === 'free') {
-    // Check daily quota
     const today    = todayUtc();
     const redisKey = `ai:daily:${userId}:${today}`;
     const used     = await redisClient.incr(redisKey);
@@ -129,75 +100,31 @@ async function generateExplanation(
       create: { userId, date: dateObj, callCount: 1 },
       update: { callCount: { increment: 1 } },
     });
-
-    model = MODEL_HAIKU;
-  } else {
-    // Premium: Sonnet if balance > 0, else Haiku
-    const ledger = await db.tokenLedger.findUnique({
-      where:  { userId },
-      select: { balanceCents: true },
-    });
-    const balance = ledger?.balanceCents ?? 0;
-    model = balance > 0 ? MODEL_SONNET : MODEL_HAIKU;
   }
 
-  const promptText = model === MODEL_HAIKU
-    ? buildSignalExplanationHaikuPrompt(snapshot, setupName)
-    : buildSignalExplanationPrompt(snapshot, setupName);
-
-  let response: Anthropic.Message;
+  // Route through the shared LLM router — it resolves the model (Haiku for
+  // free, Sonnet for premium-with-balance, Haiku fallback when exhausted),
+  // writes the `llm_calls` audit row and debits the ledger.
   try {
-    response = await anthropic.messages.create({
-      model,
-      max_tokens: 512,
-      system:   [SYSTEM_PROMPT_CACHE_BLOCK],
-      messages: [{ role: 'user', content: promptText }],
+    const result = await callLlm({
+      db,
+      feature:      'signal_explanation',
+      userId,
+      userTier:     tier,
+      maxTokens:    512,
+      systemBlocks: [SYSTEM_PROMPT_CACHE_BLOCK],
+      messages: (model) => [{
+        role: 'user',
+        content: model === 'claude-haiku-4-5'
+          ? buildSignalExplanationHaikuPrompt(snapshot, setupName)
+          : buildSignalExplanationPrompt(snapshot, setupName),
+      }],
     });
+    return { explanation: result.text, model: result.model, costCents: result.costCents };
   } catch (err) {
-    console.error('[dispatcher] Anthropic error:', err);
+    console.error('[dispatcher] callLlm error:', err);
     return null;
   }
-
-  const rawUsage = response.usage as UsageTokens & Record<string, number>;
-  const usage: UsageTokens = {
-    input_tokens:                rawUsage.input_tokens,
-    output_tokens:               rawUsage.output_tokens,
-    cache_creation_input_tokens: rawUsage.cache_creation_input_tokens,
-    cache_read_input_tokens:     rawUsage.cache_read_input_tokens,
-  };
-
-  const costCents = computeCostCents(model, usage);
-
-  const explanation = response.content
-    .filter((b): b is Anthropic.TextBlock => b.type === 'text')
-    .map(b => b.text)
-    .join('');
-
-  // Write LlmCall
-  await db.llmCall.create({
-    data: {
-      userId,
-      feature:                  'signal_explanation',
-      model,
-      inputTokens:              usage.input_tokens,
-      outputTokens:             usage.output_tokens,
-      cacheCreationInputTokens: usage.cache_creation_input_tokens ?? 0,
-      cacheReadInputTokens:     usage.cache_read_input_tokens ?? 0,
-      costCents,
-      batched: false,
-    },
-  });
-
-  // Deduct from ledger (premium only)
-  if (tier === 'premium' && costCents > 0) {
-    await db.$executeRaw`
-      UPDATE token_ledger
-      SET balance_cents = balance_cents - ${costCents}
-      WHERE user_id = ${userId}
-    `;
-  }
-
-  return { explanation, model, costCents };
 }
 
 // ─── Notification channel helpers ─────────────────────────────────────────────
