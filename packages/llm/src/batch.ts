@@ -1,24 +1,26 @@
 /**
  * Anthropic Batch API wrapper for scheduled / high-volume jobs.
  *
- * All batch calls use the Messages Batch API which provides 50% cost savings
- * versus real-time calls. Intended for: daily_recap (nightly), bulk scan
- * synthesis, and historical re-analysis tasks.
+ * Batch calls receive a 50% discount versus real-time. Intended for:
+ * daily_recap (nightly), bulk scan synthesis, historical re-analysis.
+ *
+ * `db` is injected per-call (consistent with the router) so each app
+ * passes its own PrismaClient.
  */
 
 import Anthropic from '@anthropic-ai/sdk';
-import { db } from '../db';
+import type { PrismaClient } from '@prisma/client';
 import { computeCostCents, type LlmFeature, type LlmModel } from './router';
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
 export interface BatchRequest {
-  customId: string;
-  userId:   string;
-  feature:  LlmFeature;
-  model:    LlmModel;
-  messages: Anthropic.MessageParam[];
-  system?:  Anthropic.TextBlockParam[];
+  customId:   string;
+  userId:     string;
+  feature:    LlmFeature;
+  model:      LlmModel;
+  messages:   Anthropic.MessageParam[];
+  system?:    Anthropic.TextBlockParam[];
   maxTokens?: number;
 }
 
@@ -28,13 +30,27 @@ export interface BatchResult {
   error:    string | null;
 }
 
-// ─── Submit ───────────────────────────────────────────────────────────────────
+// Ensure the last system block carries an ephemeral cache breakpoint, matching
+// the real-time router (router.ts → withEphemeralCacheOnLast). Without this,
+// batched daily_recap / scan_synthesis (Opus) silently skip prompt caching even
+// when the system prompt clears the 4,096-token minimum. Idempotent: re-setting
+// cache_control on a block that already has it is a no-op.
+function withEphemeralCacheOnLast(
+  blocks: Anthropic.TextBlockParam[] | undefined,
+): Anthropic.TextBlockParam[] | undefined {
+  if (!blocks || blocks.length === 0) return blocks;
+  return blocks.map((block, idx) =>
+    idx !== blocks.length - 1
+      ? block
+      : { ...block, cache_control: { type: 'ephemeral' as const } },
+  );
+}
 
 export async function submitBatch(requests: BatchRequest[]): Promise<string> {
   const batchRequests: Anthropic.MessageCreateParamsNonStreaming[] = requests.map(r => ({
     model:      r.model,
     max_tokens: r.maxTokens ?? 4096,
-    system:     r.system,
+    system:     withEphemeralCacheOnLast(r.system),
     messages:   r.messages,
   }));
 
@@ -48,27 +64,22 @@ export async function submitBatch(requests: BatchRequest[]): Promise<string> {
   return batch.id;
 }
 
-// ─── Poll ─────────────────────────────────────────────────────────────────────
-
 export async function waitForBatch(
   batchId: string,
   pollIntervalMs = 5_000,
-  timeoutMs = 300_000,
+  timeoutMs      = 300_000,
 ): Promise<Awaited<ReturnType<typeof anthropic.messages.batches.retrieve>>> {
   const deadline = Date.now() + timeoutMs;
-
   while (Date.now() < deadline) {
     const batch = await anthropic.messages.batches.retrieve(batchId);
     if (batch.processing_status === 'ended') return batch;
     await new Promise(resolve => setTimeout(resolve, pollIntervalMs));
   }
-
   throw new Error(`Batch ${batchId} did not complete within ${timeoutMs}ms`);
 }
 
-// ─── Collect Results ──────────────────────────────────────────────────────────
-
 export async function collectBatchResults(
+  db:       PrismaClient,
   batchId:  string,
   requests: BatchRequest[],
 ): Promise<BatchResult[]> {
@@ -92,9 +103,15 @@ export async function collectBatchResults(
         cache_creation_input_tokens: msg.usage.cache_creation_input_tokens ?? undefined,
         cache_read_input_tokens:     msg.usage.cache_read_input_tokens     ?? undefined,
       };
-      const costCents = Math.ceil(computeCostCents(req.model, usage) * 0.5); // 50% batch discount
+      const costCents = Math.ceil(computeCostCents(req.model, usage) * 0.5);
 
-      await logBatchCall({ userId: req.userId, feature: req.feature, model: req.model, usage, costCents });
+      await logBatchCall(db, {
+        userId:    req.userId,
+        feature:   req.feature,
+        model:     req.model,
+        usage,
+        costCents,
+      });
 
       results.push({ customId: result.custom_id, text, error: null });
     } else {
@@ -105,23 +122,25 @@ export async function collectBatchResults(
   return results;
 }
 
-// ─── Submit-Wait-Collect ──────────────────────────────────────────────────────
-
-export async function runBatch(requests: BatchRequest[]): Promise<BatchResult[]> {
+export async function runBatch(
+  db:       PrismaClient,
+  requests: BatchRequest[],
+): Promise<BatchResult[]> {
   const batchId = await submitBatch(requests);
   await waitForBatch(batchId);
-  return collectBatchResults(batchId, requests);
+  return collectBatchResults(db, batchId, requests);
 }
 
-// ─── Logger ───────────────────────────────────────────────────────────────────
-
-async function logBatchCall(args: {
-  userId:    string;
-  feature:   LlmFeature;
-  model:     LlmModel;
-  usage:     { input_tokens: number; output_tokens: number; cache_creation_input_tokens?: number; cache_read_input_tokens?: number };
-  costCents: number;
-}): Promise<void> {
+async function logBatchCall(
+  db: PrismaClient,
+  args: {
+    userId:    string;
+    feature:   LlmFeature;
+    model:     LlmModel;
+    usage:     { input_tokens: number; output_tokens: number; cache_creation_input_tokens?: number; cache_read_input_tokens?: number };
+    costCents: number;
+  },
+): Promise<void> {
   try {
     await db.llmCall.create({
       data: {

@@ -12,6 +12,7 @@
     "@anthropic-ai/sdk": "^0.35.0",
     "@auth/prisma-adapter": "^2.7.0",
     "@orderflow/db": "workspace:*",
+    "@orderflow/llm": "workspace:*",
     "@orderflow/llm-prompts": "workspace:*",
     "@orderflow/types": "workspace:*",
     "@prisma/client": "^5.22.0",

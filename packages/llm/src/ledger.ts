@@ -1,6 +1,7 @@
-import { db } from '../db';
+import type { PrismaClient } from '@prisma/client';
 
-export async function getBalance(userId: string): Promise<number> {
+/** Reads current token balance. Returns 0 when there's no ledger row. */
+export async function getBalance(db: PrismaClient, userId: string): Promise<number> {
   const ledger = await db.tokenLedger.findUnique({
     where:  { userId },
     select: { balanceCents: true },
@@ -8,7 +9,12 @@ export async function getBalance(userId: string): Promise<number> {
   return ledger?.balanceCents ?? 0;
 }
 
-export async function creditBalance(userId: string, cents: number): Promise<void> {
+/** Adds `cents` to the user's balance (upsert, atomic). No-op if cents ≤ 0. */
+export async function creditBalance(
+  db: PrismaClient,
+  userId: string,
+  cents: number,
+): Promise<void> {
   if (cents <= 0) return;
   await db.$executeRaw`
     INSERT INTO token_ledger (user_id, balance_cents, updated_at)
@@ -19,7 +25,12 @@ export async function creditBalance(userId: string, cents: number): Promise<void
   `;
 }
 
-export async function deductBalance(userId: string, cents: number): Promise<void> {
+/** Subtracts `cents` from the user's balance (upsert, atomic). No-op if cents ≤ 0. */
+export async function deductBalance(
+  db: PrismaClient,
+  userId: string,
+  cents: number,
+): Promise<void> {
   if (cents <= 0) return;
   await db.$executeRaw`
     INSERT INTO token_ledger (user_id, balance_cents, updated_at)
@@ -30,17 +41,23 @@ export async function deductBalance(userId: string, cents: number): Promise<void
   `;
 }
 
-export async function hasBalance(userId: string, minCents = 1): Promise<boolean> {
-  const bal = await getBalance(userId);
-  return bal >= minCents;
+export async function hasBalance(
+  db: PrismaClient,
+  userId: string,
+  minCents = 1,
+): Promise<boolean> {
+  return (await getBalance(db, userId)) >= minCents;
 }
 
-export async function getUsageSummary(userId: string, days = 30): Promise<{
+export async function getUsageSummary(
+  db: PrismaClient,
+  userId: string,
+  days = 30,
+): Promise<{
   totalCostCents: number;
   callsByFeature: Record<string, { calls: number; costCents: number }>;
 }> {
   const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
-
   const rows = await db.llmCall.findMany({
     where:  { userId, createdAt: { gte: since } },
     select: { feature: true, costCents: true },
@@ -48,15 +65,12 @@ export async function getUsageSummary(userId: string, days = 30): Promise<{
 
   const callsByFeature: Record<string, { calls: number; costCents: number }> = {};
   let totalCostCents = 0;
-
-  for (const row of rows) {
-    totalCostCents += row.costCents;
-    if (!callsByFeature[row.feature]) {
-      callsByFeature[row.feature] = { calls: 0, costCents: 0 };
-    }
-    callsByFeature[row.feature].calls++;
-    callsByFeature[row.feature].costCents += row.costCents;
+  for (const r of rows) {
+    totalCostCents += r.costCents;
+    const entry = callsByFeature[r.feature] ?? { calls: 0, costCents: 0 };
+    entry.calls     += 1;
+    entry.costCents += r.costCents;
+    callsByFeature[r.feature] = entry;
   }
-
   return { totalCostCents, callsByFeature };
 }

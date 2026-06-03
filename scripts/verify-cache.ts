@@ -109,7 +109,7 @@ async function main() {
 
   const promptChars = SYSTEM_PROMPT.length;
   console.log(`SYSTEM_PROMPT size: ${promptChars} chars (~${Math.round(promptChars / 3.8)} tokens, chars/3.8 estimator)`);
-  console.log(`Anthropic minimum cacheable prefix: 1024 tokens (Sonnet/Opus 4.x), 2048 tokens (Haiku 4.5)`);
+  console.log(`Anthropic minimum cacheable prefix: 4096 tokens (Opus 4.x + Haiku 4.5), 2048 tokens (Sonnet 4.6)`);
 
   const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 

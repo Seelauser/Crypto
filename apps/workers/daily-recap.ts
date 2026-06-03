@@ -12,16 +12,15 @@
  *         node --loader ts-node/esm daily-recap.ts
  */
 
-import Anthropic from '@anthropic-ai/sdk';
 import { PrismaClient } from '@prisma/client';
 import { Resend } from 'resend';
 import { buildDailyRecapPrompt, SYSTEM_PROMPT_CACHE_BLOCK } from '@orderflow/llm-prompts';
+import { callLlm } from '@orderflow/llm';
 import type { SignalSnapshot, SweepEvent } from '@orderflow/types';
 
 // ─── Clients ──────────────────────────────────────────────────────────────────
 
-const db        = new PrismaClient({ log: ['error'] });
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+const db = new PrismaClient({ log: ['error'] });
 
 let _resend: Resend | null = null;
 const resend = {
@@ -40,34 +39,9 @@ const BASE_URL  = process.env.APP_URL ?? 'http://localhost:3000';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const MODEL_OPUS  = 'claude-opus-4-7' as const;
-const BATCH_SIZE  = 5;
-
-// Cents per 1 000 tokens — Opus pricing
-const OPUS_PRICING = {
-  input:      0.500,
-  output:     2.500,
-  cacheRead:  0.050,
-  cacheWrite: 0.625,
-} as const;
+const BATCH_SIZE = 5;
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
-
-interface UsageTokens {
-  input_tokens:                number;
-  output_tokens:               number;
-  cache_creation_input_tokens?: number;
-  cache_read_input_tokens?:    number;
-}
-
-function computeOpusCostCents(usage: UsageTokens): number {
-  const p          = OPUS_PRICING;
-  const input      = (usage.input_tokens / 1000) * p.input;
-  const output     = (usage.output_tokens / 1000) * p.output;
-  const cacheRead  = ((usage.cache_read_input_tokens  ?? 0) / 1000) * p.cacheRead;
-  const cacheWrite = ((usage.cache_creation_input_tokens ?? 0) / 1000) * p.cacheWrite;
-  return Math.ceil(input + output + cacheRead + cacheWrite);
-}
 
 function todayDateString(): string {
   return new Date().toISOString().slice(0, 10);
@@ -177,65 +151,33 @@ async function generateUserRecap(
     topSweeps: sweeps.slice(0, 3),
   });
 
-  let response: Anthropic.Message;
+  let content: string;
+  let model: string;
+  let costCents: number;
   try {
-    response = await anthropic.messages.create({
-      model:      MODEL_OPUS,
-      max_tokens: 1024,
-      system:   [SYSTEM_PROMPT_CACHE_BLOCK],
-      messages: [{ role: 'user', content: promptText }],
+    const result = await callLlm({
+      db,
+      feature:      'daily_recap',
+      userId,
+      userTier:     'premium', // only premium users reach this path (see main())
+      maxTokens:    1024,
+      systemBlocks: [SYSTEM_PROMPT_CACHE_BLOCK],
+      messages:     [{ role: 'user', content: promptText }],
     });
+    content   = result.text;
+    model     = result.model;
+    costCents = result.costCents;
   } catch (err) {
-    console.error(`[daily-recap] Anthropic error for user ${userId}:`, err);
+    console.error(`[daily-recap] callLlm error for user ${userId}:`, err);
     return { userId, costCents: 0, success: false };
   }
 
-  const rawUsage = response.usage as UsageTokens & Record<string, number>;
-  const usage: UsageTokens = {
-    input_tokens:                rawUsage.input_tokens,
-    output_tokens:               rawUsage.output_tokens,
-    cache_creation_input_tokens: rawUsage.cache_creation_input_tokens,
-    cache_read_input_tokens:     rawUsage.cache_read_input_tokens,
-  };
-
-  // e. Compute cost
-  const costCents = computeOpusCostCents(usage);
-
-  const content = response.content
-    .filter((b): b is Anthropic.TextBlock => b.type === 'text')
-    .map(b => b.text)
-    .join('');
-
-  // Write LlmCall record
-  await db.llmCall.create({
-    data: {
-      userId,
-      feature:                  'daily_recap',
-      model:                    MODEL_OPUS,
-      inputTokens:              usage.input_tokens,
-      outputTokens:             usage.output_tokens,
-      cacheCreationInputTokens: usage.cache_creation_input_tokens ?? 0,
-      cacheReadInputTokens:     usage.cache_read_input_tokens ?? 0,
-      costCents,
-      batched: false,
-    },
-  });
-
-  // Deduct from token_ledger atomically
-  if (costCents > 0) {
-    await db.$executeRaw`
-      UPDATE token_ledger
-      SET balance_cents = balance_cents - ${costCents}
-      WHERE user_id = ${userId}
-    `;
-  }
-
-  // f. Store DailyRecap record
+  // f. Store DailyRecap record (llm_calls + ledger debit happen inside callLlm)
   const recap = await db.dailyRecap.create({
     data: {
       userId,
       content,
-      model:     MODEL_OPUS,
+      model,
       costCents,
     },
   });
