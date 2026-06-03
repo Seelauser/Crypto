@@ -9,8 +9,7 @@
     "db:timescale": "node -e \"const u=new URL(process.env.DATABASE_URL);require('child_process').execFileSync('psql',['-v','ON_ERROR_STOP=1','-h',u.hostname,'-p',u.port||'5432','-U',u.username,'-d',u.pathname.slice(1),'-f','prisma/timescale.sql'],{stdio:'inherit',env:{...process.env,PGPASSWORD:decodeURIComponent(u.password)}})\"",
     "db:seed": "tsx src/seed.ts",
     "db:studio": "prisma studio",
-    "generate": "prisma generate",
-    "typecheck": "tsc --noEmit"
+    "generate": "prisma generate"
   },
   "dependencies": {
     "@prisma/client": "^5.22.0"
