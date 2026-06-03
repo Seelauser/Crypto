@@ -2,6 +2,8 @@
 
 Live deployment of `https://orderflow-beast.com` on VPS `srv860116` (147.93.57.246).
 
+> For **how the system actually works** end-to-end (data flows, signal pipeline, honest gaps, improvement vectors), see [`ARCHITECTURE.md`](./ARCHITECTURE.md). This document is the **runbook** — what to do when something needs operating, not how it's designed.
+
 ## Quick state check
 
 ```bash

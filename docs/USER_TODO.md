@@ -124,3 +124,22 @@ Once you've pasted the keys, ping me with which section(s) you set and I'll:
 - Run a paid Stripe checkout test through to a webhook-confirmed Pro upgrade
 - Send a real email + Telegram + push notification through the dispatcher to validate end-to-end
 - Sanity-check the dashboard renders with regime data populated for the new asset classes
+
+---
+
+## Engineering backlog — things Claude can do *without* credentials
+
+These came out of the as-built review documented in [`ARCHITECTURE.md`](./ARCHITECTURE.md) §10–11. None need a key from you — just give me the go-ahead.
+
+| # | Item | Effort | Why it matters |
+|---|---|---|---|
+| E1 | Deploy `orderflow-scan-worker.service` (the worker exists at `apps/orderflow-workers/src/ingest/scan_worker.py` but has no systemd unit; scan jobs queue forever today) | ~30 min | The "Scans" product surface goes from broken → working |
+| E2 | Move registration rate limit from in-memory Map → Redis | ~30 min | Trivially DoSable today; one restart wipes the limiter |
+| E3 | Build `/api/auth/resend` route + UI button for verification email | ~1 h | If your first email gets lost, users have no recourse today |
+| E4 | TimescaleDB continuous aggregates for `ohlcv_bars` (1m/5m/15m/1h) | ~3 h | Every `/bars` request currently re-runs `time_bucket` over raw ticks; caches make it ~10x faster |
+| E5 | Retention policy on `order_book_snapshots` (e.g. 14 days) | ~10 min | Currently unbounded; ~600k rows in 30 days — becomes a problem in 6–12 months |
+| E6 | Persist streaming CVD baselines every 60s | ~2 h | A `streaming.service` restart wipes running CVD totals |
+| E7 | Per-page mobile audit (/signals, /scans, /settings, /billing, /markets) | ~4 h | Only `/dashboard` got the mobile-first treatment in session 19 |
+| E8 | Migrate from `next lint` (deprecated) to ESLint flat config | ~1 h | Lint coverage is currently dropped in CI |
+
+Tell me **`work E1`** (or whichever number) and I'll pick it up.

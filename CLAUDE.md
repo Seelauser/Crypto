@@ -4,6 +4,12 @@ Professional order-flow analytics SaaS. Live at **https://orderflow-beast.com**.
 
 Six asset classes: Crypto (True L2, Binance/Coinbase/Kraken), US Stocks, US Futures, Forex, Commodities, Resources (all Inferred — workers not yet shipped, blocked on API keys). Two core products: **Order Flow Signals** and **Live Scans**.
 
+**Companion docs (read first depending on your goal):**
+- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — honest as-built map, end-to-end flows, gaps, ranked improvement vectors. Start here for "how does this actually work" or "where should we invest next."
+- [`docs/OPERATIONS.md`](docs/OPERATIONS.md) — production runbook (12 systemd units, restart order, logs, recovery).
+- [`docs/USER_TODO.md`](docs/USER_TODO.md) — credentials the owner still needs to provide, grouped by what they unlock.
+- [`docs/NEXT_SESSION.md`](docs/NEXT_SESSION.md) — next-session starting point: what's shipped, what's next, picklist.
+
 ## Stack
 
 | Layer | Tech |
