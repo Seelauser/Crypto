@@ -14,9 +14,10 @@ without scrolling through prior checkpoints.
 |---|---|
 | URL | https://orderflow-beast.com |
 | Last health check | 2026-06-03 (session 24) — HTTP 200, public + local |
-| **Live build** | **C2 + C3 + Phase 2 deployed** (session 24). 3-tier `free\|starter\|pro` live; `/admin` cost-center KPI live (`ADMIN_USERNAMES=seelauser`). |
+| **Live build** | **C2 + C3 + Phase 2 + Placement engine deployed** (session 24). 3-tier `free\|starter\|pro` live; `/admin` cost-center KPI live; **live Placement Signal panel** on `/markets/[asset]` (default bottom tab, scoring real crypto order flow). |
+| Live WebSocket | **Fixed** (`/ws` → `/ws/` proxy mismatch) — was silently dead; now `WS: live` app-wide. |
 | systemd units active | **13 services + 1 timer** |
-| Git | `main` @ `1e54c9e`, pushed to `origin/main` |
+| Git | `main` @ `c69ad99`, pushed to `origin/main` |
 | Typecheck | `pnpm typecheck` — green (7/7) |
 | Lint | no-op (next-lint deprecated, dropped) |
 | Real data | Crypto only (BTC/ETH/SOL via Binance + Coinbase + Kraken) |
@@ -52,7 +53,9 @@ These are ordered by impact-per-hour.
 
 | # | Item | Effort | Notes |
 |---|---|---|---|
+| **Chart engine cont.** | Build on the live placement engine (`lib/chart/`, `components/chart/PlacementPanel.tsx`): (a) render placement **markers on the price chart** (not just the panel), (b) add `sweep_with_absorption`/`delta_exhaustion` once footprint lands, (c) `/api/signals/chart-explain` LLM tooltip via `callLlm` (§9.2), (d) the unified `OrderFlowChart.tsx` panes (§8.3). | ~1–2 d | The scoring core + live data wiring is done + deployed; this is rendering + enrichment |
 | **P2 activation** | Enable Starter purchase: create the $19 Stripe product → set `STRIPE_PRICE_STARTER`, add a 3-plan `/plan` UI. Backend already accepts `{tier}` in `/api/billing/checkout`. | ~2 h | Owner provides Stripe price ID; UI is additive/non-breaking |
+| **WS client contract** | `apps/web/src/lib/ws.ts` checks `msg.type === 'cvd_update'` but the gateway emits `market_cvd_update` — the shared CVD/tick streams are mis-keyed (dashboard live tiles affected). `usePlacementSignal` already uses the correct `market_*` keys; fold the fix into `ws.ts`. | ~30 m | Real bug, isolated to shared hooks |
 | **P2-2 / P2-4** | Chart-tier middleware + WS gateway tier enforcement | ~3 h | **Deferred into the chart-engine phase** — the premium channels they gate (footprint/derivatives) and the WS auth token don't exist until Phase 4/5 |
 | **E7** | Per-page mobile audit | ~4 h | ARCHITECTURE.md §11 Tier 4 #12 |
 | **E8** | ESLint flat-config migration | ~1 h | ARCHITECTURE.md §11 Tier 5 #18 |
