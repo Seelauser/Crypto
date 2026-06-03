@@ -3,6 +3,7 @@ import bcrypt from 'bcryptjs';
 import { z } from 'zod';
 import { db } from '@/lib/db';
 import { sendVerificationEmail, isEmailEnabled } from '@/lib/email';
+import { rateLimit } from '@/lib/rateLimit';
 import crypto from 'crypto';
 
 const registerSchema = z.object({
@@ -19,25 +20,14 @@ const registerSchema = z.object({
     .regex(/[0-9]/, 'Must include a number'),
 });
 
-// Simple in-memory rate limiter (use Redis in production)
-const attempts = new Map<string, { count: number; resetAt: number }>();
-
-function checkRateLimit(ip: string): boolean {
-  const now = Date.now();
-  const entry = attempts.get(ip);
-  if (!entry || entry.resetAt < now) {
-    attempts.set(ip, { count: 1, resetAt: now + 60_000 });
-    return true;
-  }
-  if (entry.count >= 5) return false;
-  entry.count++;
-  return true;
-}
-
 export async function POST(req: NextRequest) {
-  const ip = req.headers.get('x-forwarded-for') ?? 'unknown';
-  if (!checkRateLimit(ip)) {
-    return NextResponse.json({ error: 'Too many attempts. Try again in a minute.' }, { status: 429 });
+  const ip = (req.headers.get('x-forwarded-for') ?? 'unknown').split(',')[0].trim();
+  const limit = await rateLimit('register', ip, 5, 60);
+  if (!limit.allowed) {
+    return NextResponse.json(
+      { error: 'Too many attempts. Try again in a minute.' },
+      { status: 429, headers: { 'Retry-After': String(limit.retryAfterSec) } },
+    );
   }
 
   const body = await req.json().catch(() => null);
