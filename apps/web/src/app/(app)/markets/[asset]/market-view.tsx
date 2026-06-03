@@ -8,10 +8,11 @@ import TapePanel from '@/components/charts/TapePanel';
 import TapeNarrator from '@/components/charts/TapeNarrator';
 import DeepAnalysisPanel from '@/components/charts/DeepAnalysisPanel';
 import CorrelationPanel from '@/components/charts/CorrelationPanel';
+import PlacementPanel from '@/components/chart/PlacementPanel';
 import { useMarketSocket, useInstrumentTick } from '@/lib/ws';
 import type { AssetClass } from '@orderflow/types';
 
-type BottomPanel = 'tape' | 'tape_ai' | 'deep_analysis' | 'correlation';
+type BottomPanel = 'placement' | 'tape' | 'tape_ai' | 'deep_analysis' | 'correlation';
 
 // ─── Instrument lists per asset class ────────────────────────────────────────
 
@@ -318,7 +319,7 @@ export default function MarketView({ asset, tier }: Props) {
 
   const [selectedInstrument, setSelectedInstrument] = useState<string>(instruments[0]);
   const [searchQuery,        setSearchQuery]        = useState('');
-  const [bottomPanel,        setBottomPanel]        = useState<BottomPanel>('tape');
+  const [bottomPanel,        setBottomPanel]        = useState<BottomPanel>('placement');
 
   // Connect to WebSocket for all instruments + market channels
   const { connected } = useMarketSocket(instruments, ['market:ticks', 'market:cvd_update', 'market:orderbook']);
@@ -638,6 +639,7 @@ export default function MarketView({ asset, tier }: Props) {
             >
               {(
                 [
+                  { id: 'placement',     label: 'Placement' },
                   { id: 'tape',          label: 'Tape' },
                   { id: 'tape_ai',       label: 'Tape AI' },
                   { id: 'deep_analysis', label: 'Deep Analysis', pro: true },
@@ -680,6 +682,10 @@ export default function MarketView({ asset, tier }: Props) {
                 transition: 'height 200ms ease',
               }}
             >
+              {bottomPanel === 'placement' && (
+                <PlacementPanel instrument={selectedInstrument} tier={tier} />
+              )}
+
               {bottomPanel === 'tape' && (
                 <TapePanel instrument={selectedInstrument} tier={tier} />
               )}

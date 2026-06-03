@@ -1,0 +1,152 @@
+'use client';
+
+import { useEffect, useRef, useState } from 'react';
+import { scorePlacement } from './placementEngine';
+import type { PlacementInputs, PlacementSignal } from './types';
+
+const WS_URL = process.env.NEXT_PUBLIC_WS_URL ?? 'ws://localhost:4001';
+const SWEEP_WINDOW_MS = 30_000;
+const ABSORB_WINDOW_MS = 5_000;
+
+/**
+ * Exchanges name the same pair differently (Kraken `BTCUSD`, Binance `BTCUSDT`).
+ * Match on the base symbol so a stream from any exchange feeds the panel.
+ */
+function instrumentMatches(streamInstr: string | undefined, target: string): boolean {
+  if (!streamInstr) return false;
+  if (streamInstr === target) return true;
+  const base = (s: string) => s.replace(/(USDT|USDC|USD)$/i, '');
+  return base(streamInstr) === base(target);
+}
+
+export interface PlacementState {
+  signal:         PlacementSignal | null;
+  connected:      boolean;
+  cvd:            number | null;
+  imbalanceRatio: number | null;
+  lastSweep:      { side: string; notionalUsd: number; ts: number } | null;
+  divergence:     { kind: 'bullish' | 'bearish'; strength?: number } | null;
+}
+
+const EMPTY: PlacementState = {
+  signal: null, connected: false, cvd: null, imbalanceRatio: null, lastSweep: null, divergence: null,
+};
+
+/**
+ * Live placement-signal hook. Opens its own WebSocket to the gateway (isolated
+ * from the shared `useMarketSocket`), subscribes to the order-flow streams for
+ * `instrument`, polls the divergence detector, and re-scores via the placement
+ * engine on every update. Returns the latest signal plus the raw telemetry the
+ * panel renders even when no marker is emitted.
+ */
+export function usePlacementSignal(instrument: string, enabled = true): PlacementState {
+  const [state, setState] = useState<PlacementState>(EMPTY);
+
+  // Mutable rolling state — avoids re-subscribing on every tick.
+  const roll = useRef<{
+    cvd: number | null;
+    cvdPrev: number | null;
+    imbalance: { ratio: number; dominant: 'bid' | 'ask' } | null;
+    sweeps: { side: 'buy' | 'sell'; notionalUsd: number; ts: number; absorbed: boolean }[];
+    lastAbsorbTs: number;
+    divergence: { kind: 'bullish' | 'bearish'; strength?: number } | null;
+  }>({ cvd: null, cvdPrev: null, imbalance: null, sweeps: [], lastAbsorbTs: 0, divergence: null });
+
+  useEffect(() => {
+    if (!enabled || !instrument || typeof window === 'undefined') return;
+    roll.current = { cvd: null, cvdPrev: null, imbalance: null, sweeps: [], lastAbsorbTs: 0, divergence: null };
+    let closed = false;
+    let ws: WebSocket | null = null;
+
+    const recompute = () => {
+      const r = roll.current;
+      const recentSweep = r.sweeps.filter(s => Date.now() - s.ts < SWEEP_WINDOW_MS).pop() ?? null;
+      const inputs: PlacementInputs = {
+        instrument,
+        cvd:        r.cvd ?? 0,
+        cvdPrev:    r.cvdPrev,
+        divergence: r.divergence,
+        imbalance:  r.imbalance,
+        sweep:      recentSweep ? { side: recentSweep.side, absorbed: recentSweep.absorbed } : null,
+        ts:         Date.now(),
+      };
+      const signal = scorePlacement(inputs);
+      setState(s => ({
+        ...s,
+        signal,
+        cvd:            r.cvd,
+        imbalanceRatio: r.imbalance?.ratio ?? null,
+        lastSweep:      recentSweep ? { side: recentSweep.side, notionalUsd: recentSweep.notionalUsd, ts: recentSweep.ts } : null,
+        divergence:     r.divergence,
+      }));
+    };
+
+    // ── Divergence poll (the detector publishes every ~120s) ───────────────
+    const fetchDivergence = async () => {
+      try {
+        const res = await fetch('/api/market/divergences');
+        if (!res.ok) return;
+        const { divergences } = await res.json() as { divergences: Array<Record<string, any>> };
+        const d = divergences.find(x => instrumentMatches(x.instrument, instrument));
+        roll.current.divergence = d ? { kind: d.kind, strength: d.divergence_strength } : null;
+        recompute();
+      } catch { /* ignore */ }
+    };
+    void fetchDivergence();
+    const divTimer = setInterval(fetchDivergence, 60_000);
+
+    // ── Live order-flow WebSocket ──────────────────────────────────────────
+    const connect = () => {
+      if (closed) return;
+      ws = new WebSocket(WS_URL);
+      ws.onopen = () => {
+        setState(s => ({ ...s, connected: true }));
+        ws?.send(JSON.stringify({
+          type: 'subscribe',
+          channels: ['market:cvd_update', 'market:imbalance_update', 'market:sweep_detected', 'market:absorption_detected'],
+        }));
+      };
+      ws.onclose = () => { setState(s => ({ ...s, connected: false })); if (!closed) setTimeout(connect, 3_000); };
+      ws.onerror = () => ws?.close();
+      ws.onmessage = (ev) => {
+        let m: { type?: string; data?: Record<string, any> };
+        try { m = JSON.parse(ev.data); } catch { return; }
+        const d = m.data;
+        if (!d || !instrumentMatches(d.instrument, instrument)) return;
+        const r = roll.current;
+
+        switch (m.type) {
+          case 'market_cvd_update':
+            if (typeof d.cvd === 'number') { r.cvdPrev = r.cvd; r.cvd = d.cvd; }
+            break;
+          case 'market_imbalance_update': {
+            const ratio = d.imbalance_ratio;
+            r.imbalance = typeof ratio === 'number' ? { ratio, dominant: ratio >= 1 ? 'bid' : 'ask' } : null;
+            break;
+          }
+          case 'market_absorption_detected':
+            r.lastAbsorbTs = Date.now();
+            break;
+          case 'market_sweep_detected':
+            r.sweeps.push({
+              side:        d.side === 'sell' ? 'sell' : 'buy',
+              notionalUsd: d.notional_usd ?? 0,
+              ts:          d.ts ?? Date.now(),
+              // A sweep counts as absorbed if a passive-absorption event landed within 5s.
+              absorbed:    Date.now() - r.lastAbsorbTs < ABSORB_WINDOW_MS,
+            });
+            r.sweeps = r.sweeps.filter(s => Date.now() - s.ts < SWEEP_WINDOW_MS).slice(-10);
+            break;
+          default:
+            return;
+        }
+        recompute();
+      };
+    };
+    connect();
+
+    return () => { closed = true; clearInterval(divTimer); ws?.close(); };
+  }, [instrument, enabled]);
+
+  return state;
+}
