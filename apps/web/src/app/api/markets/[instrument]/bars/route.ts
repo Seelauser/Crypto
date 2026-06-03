@@ -76,7 +76,16 @@ const TIMEFRAME_BUCKET: Record<string, string> = {
   '1d':  '1 day',
 };
 
-// ─── Real bars from market_ticks via TimescaleDB time_bucket ─────────────────
+// Timeframes with a dedicated continuous aggregate view in TimescaleDB.
+// Other timeframes (4h, 1d) roll up from ohlcv_1h at query time.
+const CAGG_VIEW: Record<string, string> = {
+  '1m':  'ohlcv_1m',
+  '5m':  'ohlcv_5m',
+  '15m': 'ohlcv_15m',
+  '1h':  'ohlcv_1h',
+};
+
+// ─── Real bars from TimescaleDB continuous aggregates ─────────────────────────
 
 interface RawBar {
   bucket_ts: Date;
@@ -99,32 +108,50 @@ async function fetchRealBars(
 
   // Window covers (limit + a small buffer) bars to compensate for empty
   // buckets — request a few extra so we still return up to `limit` after
-  // the LIMIT clause trims them. Buffer is small for tight TFs, larger
-  // for daily where gaps are unlikely.
+  // the LIMIT clause trims them.
   const windowMin = (limit + 8) * minutes;
 
-  // Use $queryRawUnsafe sparingly here — both bucket and interval are
-  // sourced from the fixed TIMEFRAME_* whitelists, so no injection risk.
-  // Numeric inputs use parameterised values.
+  const view = CAGG_VIEW[timeframe];
+
+  // Both `view` and `bucket` are sourced from fixed whitelists above —
+  // no injection risk. Numeric inputs use parameterised values.
+  const sql = view
+    ? // Fast path: direct read from the pre-aggregated view.
+      `
+      SELECT
+        bucket           AS bucket_ts,
+        open::text       AS open,
+        high::text       AS high,
+        low::text        AS low,
+        close::text      AS close,
+        volume::text     AS volume,
+        delta::text      AS delta
+      FROM ${view}
+      WHERE instrument = $1
+        AND bucket >= NOW() - ($2 || ' minutes')::interval
+      ORDER BY bucket DESC
+      LIMIT $3
+      `
+    : // Roll-up path: 4h / 1d aggregated from the 1h CAGG on demand.
+      `
+      SELECT
+        time_bucket('${bucket}'::interval, bucket) AS bucket_ts,
+        first(open,  bucket)::text  AS open,
+        max(high)::text              AS high,
+        min(low)::text               AS low,
+        last(close, bucket)::text    AS close,
+        sum(volume)::text            AS volume,
+        sum(delta)::text             AS delta
+      FROM ohlcv_1h
+      WHERE instrument = $1
+        AND bucket >= NOW() - ($2 || ' minutes')::interval
+      GROUP BY bucket_ts
+      ORDER BY bucket_ts DESC
+      LIMIT $3
+      `;
+
   const rows = await db.$queryRawUnsafe<RawBar[]>(
-    `
-    SELECT
-      time_bucket('${bucket}'::interval, ts)                                 AS bucket_ts,
-      first(price, ts)::text                                                  AS open,
-      max(price)::text                                                        AS high,
-      min(price)::text                                                        AS low,
-      last(price, ts)::text                                                   AS close,
-      sum(size)::text                                                         AS volume,
-      sum(CASE WHEN side = 'buy' THEN size
-               WHEN side = 'sell' THEN -size
-               ELSE 0 END)::text                                              AS delta
-    FROM market_ticks
-    WHERE instrument = $1
-      AND ts >= NOW() - ($2 || ' minutes')::interval
-    GROUP BY bucket_ts
-    ORDER BY bucket_ts DESC
-    LIMIT $3
-    `,
+    sql,
     instrument,
     String(windowMin),
     limit,

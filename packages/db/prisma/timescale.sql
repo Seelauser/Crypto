@@ -50,3 +50,103 @@ CREATE INDEX IF NOT EXISTS ohlcv_bars_instrument_tf_ts ON ohlcv_bars (instrument
 SELECT add_retention_policy('market_ticks', INTERVAL '90 days', if_not_exists => TRUE);
 SELECT add_retention_policy('ohlcv_bars', INTERVAL '365 days', if_not_exists => TRUE);
 SELECT add_retention_policy('order_book_snapshots', INTERVAL '14 days', if_not_exists => TRUE);
+
+-- ──────────────────────────────────────────────────────────────────────────────
+-- Continuous aggregates — pre-bucketed OHLCV + delta for the bars API
+--
+-- The /api/markets/[instrument]/bars route previously ran time_bucket() over
+-- raw market_ticks on every request — at ~180k ticks/hour that's an unbounded
+-- scan per chart load. These materialised views let the API query a tiny
+-- pre-aggregated table and let Timescale schedule the heavy lifting in the
+-- background.
+--
+-- Grouping is (bucket, instrument) — exchange dimension is intentionally
+-- collapsed to match the existing route's behavior. Re-introduce per-exchange
+-- views in Phase 3 when multi-exchange ingest lands.
+-- ──────────────────────────────────────────────────────────────────────────────
+
+CREATE MATERIALIZED VIEW IF NOT EXISTS ohlcv_1m
+WITH (timescaledb.continuous) AS
+SELECT
+  time_bucket('1 minute', ts) AS bucket,
+  instrument,
+  FIRST(price, ts)  AS open,
+  MAX(price)        AS high,
+  MIN(price)        AS low,
+  LAST(price, ts)   AS close,
+  SUM(size)         AS volume,
+  SUM(CASE WHEN side='buy' THEN size WHEN side='sell' THEN -size ELSE 0 END) AS delta
+FROM market_ticks
+GROUP BY bucket, instrument
+WITH NO DATA;
+
+CREATE MATERIALIZED VIEW IF NOT EXISTS ohlcv_5m
+WITH (timescaledb.continuous) AS
+SELECT
+  time_bucket('5 minutes', ts) AS bucket,
+  instrument,
+  FIRST(price, ts)  AS open,
+  MAX(price)        AS high,
+  MIN(price)        AS low,
+  LAST(price, ts)   AS close,
+  SUM(size)         AS volume,
+  SUM(CASE WHEN side='buy' THEN size WHEN side='sell' THEN -size ELSE 0 END) AS delta
+FROM market_ticks
+GROUP BY bucket, instrument
+WITH NO DATA;
+
+CREATE MATERIALIZED VIEW IF NOT EXISTS ohlcv_15m
+WITH (timescaledb.continuous) AS
+SELECT
+  time_bucket('15 minutes', ts) AS bucket,
+  instrument,
+  FIRST(price, ts)  AS open,
+  MAX(price)        AS high,
+  MIN(price)        AS low,
+  LAST(price, ts)   AS close,
+  SUM(size)         AS volume,
+  SUM(CASE WHEN side='buy' THEN size WHEN side='sell' THEN -size ELSE 0 END) AS delta
+FROM market_ticks
+GROUP BY bucket, instrument
+WITH NO DATA;
+
+CREATE MATERIALIZED VIEW IF NOT EXISTS ohlcv_1h
+WITH (timescaledb.continuous) AS
+SELECT
+  time_bucket('1 hour', ts) AS bucket,
+  instrument,
+  FIRST(price, ts)  AS open,
+  MAX(price)        AS high,
+  MIN(price)        AS low,
+  LAST(price, ts)   AS close,
+  SUM(size)         AS volume,
+  SUM(CASE WHEN side='buy' THEN size WHEN side='sell' THEN -size ELSE 0 END) AS delta
+FROM market_ticks
+GROUP BY bucket, instrument
+WITH NO DATA;
+
+-- Refresh policies: schedule cadence ≈ bucket size; end_offset is the
+-- "freshness lag" — the most recent bucket falls behind by this much.
+SELECT add_continuous_aggregate_policy('ohlcv_1m',
+  start_offset      => INTERVAL '6 hours',
+  end_offset        => INTERVAL '30 seconds',
+  schedule_interval => INTERVAL '1 minute',
+  if_not_exists     => TRUE);
+
+SELECT add_continuous_aggregate_policy('ohlcv_5m',
+  start_offset      => INTERVAL '1 day',
+  end_offset        => INTERVAL '1 minute',
+  schedule_interval => INTERVAL '5 minutes',
+  if_not_exists     => TRUE);
+
+SELECT add_continuous_aggregate_policy('ohlcv_15m',
+  start_offset      => INTERVAL '7 days',
+  end_offset        => INTERVAL '5 minutes',
+  schedule_interval => INTERVAL '15 minutes',
+  if_not_exists     => TRUE);
+
+SELECT add_continuous_aggregate_policy('ohlcv_1h',
+  start_offset      => INTERVAL '30 days',
+  end_offset        => INTERVAL '15 minutes',
+  schedule_interval => INTERVAL '1 hour',
+  if_not_exists     => TRUE);
