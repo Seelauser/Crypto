@@ -9,7 +9,7 @@ import type { UserTier } from '@orderflow/types';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const MODEL = 'claude-haiku-4-5' as const;
+const MODEL = 'claude-haiku-4-5-20251001' as const;
 const MAX_OUTPUT_TOKENS = 120;
 const RATE_LIMIT_MAX = 20;
 const RATE_LIMIT_WINDOW = 3600;       // 1 hour

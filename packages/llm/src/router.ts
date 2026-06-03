@@ -28,13 +28,13 @@ export type LlmFeature =
   | 'qa_synthesis';
 
 export type LlmModel =
-  | 'claude-haiku-4-5'
+  | 'claude-haiku-4-5-20251001'
   | 'claude-sonnet-4-6'
-  | 'claude-opus-4-7';
+  | 'claude-opus-4-8';
 
 export type UserTier = 'free' | 'premium';
 
-const HAIKU: LlmModel = 'claude-haiku-4-5';
+const HAIKU: LlmModel = 'claude-haiku-4-5-20251001';
 
 // ─── Anthropic Client ─────────────────────────────────────────────────────────
 
@@ -46,10 +46,10 @@ const anthropic = new Anthropic({
 
 const FEATURE_MODEL_MAP: Record<LlmFeature, LlmModel> = {
   // Haiku
-  signal_triage:            'claude-haiku-4-5',
-  signal_explanation_haiku: 'claude-haiku-4-5',
-  whale_label:              'claude-haiku-4-5',
-  qa_retrieval:             'claude-haiku-4-5',
+  signal_triage:            'claude-haiku-4-5-20251001',
+  signal_explanation_haiku: 'claude-haiku-4-5-20251001',
+  whale_label:              'claude-haiku-4-5-20251001',
+  qa_retrieval:             'claude-haiku-4-5-20251001',
 
   // Sonnet
   signal_explanation: 'claude-sonnet-4-6',
@@ -59,18 +59,18 @@ const FEATURE_MODEL_MAP: Record<LlmFeature, LlmModel> = {
   correlation_alert:  'claude-sonnet-4-6',
 
   // Opus
-  scan_synthesis: 'claude-opus-4-7',
-  daily_recap:    'claude-opus-4-7',
-  deep_analysis:  'claude-opus-4-7',
-  whale_forensic: 'claude-opus-4-7',
-  qa_synthesis:   'claude-opus-4-7',
+  scan_synthesis: 'claude-opus-4-8',
+  daily_recap:    'claude-opus-4-8',
+  deep_analysis:  'claude-opus-4-8',
+  whale_forensic: 'claude-opus-4-8',
+  qa_synthesis:   'claude-opus-4-8',
 };
 
 // ─── Tier Permissions ─────────────────────────────────────────────────────────
 
 const TIER_ALLOWED_MODELS: Record<UserTier, LlmModel[]> = {
-  free:    ['claude-haiku-4-5'],
-  premium: ['claude-haiku-4-5', 'claude-sonnet-4-6', 'claude-opus-4-7'],
+  free:    ['claude-haiku-4-5-20251001'],
+  premium: ['claude-haiku-4-5-20251001', 'claude-sonnet-4-6', 'claude-opus-4-8'],
 };
 
 // ─── Pricing (cents per 1 000 tokens) ─────────────────────────────────────────
@@ -83,23 +83,23 @@ interface ModelPricing {
 }
 
 const MODEL_PRICE_MAP: Record<LlmModel, ModelPricing> = {
-  'claude-haiku-4-5': {
+  'claude-haiku-4-5-20251001': {
     input:      0.100,
     output:     0.500,
-    cacheRead:  0.050,
-    cacheWrite: 0.125,
+    cacheRead:  0.010,   // $0.10/MTok — 0.1× base input
+    cacheWrite: 0.125,   // $1.25/MTok — 1.25× base input (5m TTL)
   },
   'claude-sonnet-4-6': {
     input:      0.300,
     output:     1.500,
-    cacheRead:  0.015,
-    cacheWrite: 0.375,
+    cacheRead:  0.030,   // $0.30/MTok — 0.1× base input
+    cacheWrite: 0.375,   // $3.75/MTok — 1.25× base input (5m TTL)
   },
-  'claude-opus-4-7': {
+  'claude-opus-4-8': {
     input:      0.500,
     output:     2.500,
-    cacheRead:  0.050,
-    cacheWrite: 0.625,
+    cacheRead:  0.050,   // $0.50/MTok — 0.1× base input
+    cacheWrite: 0.625,   // $6.25/MTok — 1.25× base input (5m TTL)
   },
 };
 

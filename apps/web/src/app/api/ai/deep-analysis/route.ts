@@ -10,7 +10,7 @@ import type { UserTier } from '@orderflow/types';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const MODEL = 'claude-opus-4-7' as const;
+const MODEL = 'claude-opus-4-8' as const;
 const MAX_OUTPUT_TOKENS = 800;
 const RATE_LIMIT_MAX = 5;       // per hour per user
 const RATE_LIMIT_WINDOW = 3600; // seconds (1 hour)

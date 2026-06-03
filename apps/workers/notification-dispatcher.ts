@@ -115,7 +115,7 @@ async function generateExplanation(
       systemBlocks: [SYSTEM_PROMPT_CACHE_BLOCK],
       messages: (model) => [{
         role: 'user',
-        content: model === 'claude-haiku-4-5'
+        content: model === 'claude-haiku-4-5-20251001'
           ? buildSignalExplanationHaikuPrompt(snapshot, setupName)
           : buildSignalExplanationPrompt(snapshot, setupName),
       }],

@@ -9,7 +9,7 @@ import type { UserTier } from '@orderflow/types';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const MODEL = 'claude-haiku-4-5' as const;
+const MODEL = 'claude-haiku-4-5-20251001' as const;
 const MAX_OUTPUT_TOKENS = 120;      // 50-word narration needs little headroom
 const RATE_WINDOW_SECONDS = 30;     // 1 narration per 30s per instrument per user
 const FREE_DAILY_LIMIT = 10;        // shared with signal quota

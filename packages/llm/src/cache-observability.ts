@@ -31,9 +31,9 @@ export const CACHE_LOG_SCHEMA_VERSION = 1;
  * Keep this in sync with platform.claude.com prompt-caching docs.
  */
 export const MODEL_MIN_CACHE_TOKENS: Record<LlmModel, number> = {
-  'claude-haiku-4-5':  4096,
-  'claude-sonnet-4-6': 2048,
-  'claude-opus-4-7':   4096,
+  'claude-haiku-4-5-20251001': 4096,
+  'claude-sonnet-4-6':         1024,
+  'claude-opus-4-8':           4096,
 };
 
 /** Rough token estimate from character count (chars / 3.8). Good enough for a

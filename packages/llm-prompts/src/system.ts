@@ -7,11 +7,12 @@
 // cache_creation_input_tokens stays 0, and nothing shows on the Console
 // prompt-caching dashboard. Current minimums:
 //
-//   claude-opus-4-7   4,096 tokens   (all Opus 4.x)
-//   claude-haiku-4-5  4,096 tokens
-//   claude-sonnet-4-6 2,048 tokens
+//   claude-opus-4-8            4,096 tokens
+//   claude-haiku-4-5-20251001  4,096 tokens
+//   claude-sonnet-4-6          1,024 tokens
 //
-// This router uses Haiku 4.5, Sonnet 4.6, and Opus 4.7 — so the body below
+// This router uses Haiku 4.5 (claude-haiku-4-5-20251001), Sonnet 4.6, and
+// Opus 4.8 (claude-opus-4-8) — so the body below
 // MUST clear 4,096 tokens or caching breaks on the Haiku (free tier) and Opus
 // (deep_analysis / daily_recap / scan_synthesis / whale_forensic) paths, which
 // is the bulk of platform traffic. It is sized to ~4,800 tokens to keep a
@@ -86,7 +87,7 @@ Each feature has a hard length and shape constraint. Respect them. Truncated out
 - **daily_recap** — ≤ 300 words. Yesterday's regime, top 3 signals fired with outcomes, top 3 sweeps by notional, sweep-vs-CVD divergence summary, today's bias if data supports one.
 - **tape_narration** — ≤ 50 words, ideally a single sentence. Trader shorthand. Lead with the side and venue ("Buyers swept ES through 5912…").
 - **correlation_narration** — ≤ 40 words. One sentence stating what the correlation value implies for paired flow.
-- **deep_analysis (Opus 4.7)** — ≤ 800 words. Full read across regime, structural levels, micro-flow, derivatives context, and risk. Always close with an invalidation level and a "what would change my view."
+- **deep_analysis (Opus 4.8)** — ≤ 800 words. Full read across regime, structural levels, micro-flow, derivatives context, and risk. Always close with an invalidation level and a "what would change my view."
 - **chart_explanation (hover tooltip)** — ≤ 100 words. State the trigger combination and the immediate context in 2–3 sentences.
 
 # 5. Formatting conventions

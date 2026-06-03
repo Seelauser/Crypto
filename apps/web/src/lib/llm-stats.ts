@@ -4,14 +4,14 @@ import { estimateUncachedCostCents, type LlmModel } from '@orderflow/llm';
 // The set of models we know how to price. Rows logged under any other model
 // string still count toward call/cost totals but are skipped for the
 // cache-savings estimate (we can't re-price an unknown model).
-const KNOWN_MODELS: LlmModel[] = [
-  'claude-haiku-4-5',
+const KNOWN_MODELS = [
+  'claude-haiku-4-5-20251001',
   'claude-sonnet-4-6',
-  'claude-opus-4-7',
-];
+  'claude-opus-4-8',
+] as const;
 
 function isKnownModel(model: string): model is LlmModel {
-  return (KNOWN_MODELS as string[]).includes(model);
+  return (KNOWN_MODELS as unknown as string[]).includes(model);
 }
 
 export interface ModelRow {

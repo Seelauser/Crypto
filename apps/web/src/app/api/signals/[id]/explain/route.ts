@@ -140,7 +140,7 @@ export async function POST(
       systemBlocks: [SYSTEM_PROMPT_CACHE_BLOCK],
       messages: (model) => [{
         role: 'user',
-        content: model === 'claude-haiku-4-5'
+        content: model.includes('haiku')
           ? buildSignalExplanationHaikuPrompt(snapshot, setup.name)
           : buildSignalExplanationPrompt(snapshot, setup.name),
       }],
