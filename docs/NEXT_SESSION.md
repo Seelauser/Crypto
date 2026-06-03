@@ -13,10 +13,11 @@ without scrolling through prior checkpoints.
 | | |
 |---|---|
 | URL | https://orderflow-beast.com |
-| Last health check | 2026-06-03 — HTTP 200 in 256ms |
-| systemd units active | **13 services + 1 timer** (scan-worker now live as of session 22) |
-| Git | `main` clean, in sync with `origin/main` |
-| Typecheck | `pnpm typecheck` — green |
+| Last health check | 2026-06-03 (session 24) — HTTP 200, public + local |
+| **Live build** | **C2 + C3 + Phase 2 deployed** (session 24). 3-tier `free\|starter\|pro` live; `/admin` cost-center KPI live (`ADMIN_USERNAMES=seelauser`). |
+| systemd units active | **13 services + 1 timer** |
+| Git | `main` @ `1e54c9e`, pushed to `origin/main` |
+| Typecheck | `pnpm typecheck` — green (7/7) |
 | Lint | no-op (next-lint deprecated, dropped) |
 | Real data | Crypto only (BTC/ETH/SOL via Binance + Coinbase + Kraken) |
 | Synthetic data | Stocks, futures, forex, commodities, resources — bars API GBM fallback |
@@ -126,6 +127,9 @@ indicate otherwise.
 
 These have been examined and intentionally deferred:
 
+- **Unused `premium` enum value** — the session-24 Phase 2 deploy added `starter`/`pro` and migrated data `premium→pro`, but left `premium` in the Postgres `UserTier` enum (dropping an enum value requires a risky type-recreate). It is unreferenced and harmless; drop it in a maintenance window via `prisma db push` once convenient. Schema/code already use only `free|starter|pro`.
+- **`rescue/llm-extraction-wip` branch** (`584bc20`) — a parallel, fuller `@orderflow/llm` extraction found uncommitted in the main worktree (moves `batch.ts`+`ledger.ts` into the package, deletes the `apps/api/src/llm` copies, expands `system.ts` for prompt caching). Rescued to a branch, NOT merged. Reconcile its prompt-cache + fuller-extraction improvements onto the deployed C2 when picking up the caching work.
+- **Starter not yet purchasable** — backend accepts `{tier:'starter'}` in `/api/billing/checkout`, but no `STRIPE_PRICE_STARTER` is set and there's no 3-plan `/plan` UI yet. Pro checkout still defaults correctly. See "P2 activation" in the picklist.
 - `gh-pages` and `claude/create-new-repository-wVr5l` remote-only branches — cruft from earlier scaffolding, no plan to use them. Leave alone unless space matters.
 - Worker `console.log` calls — these ARE the operational logs; systemd captures them as journal output. Not dead code.
 - `next lint` script in `apps/web/package.json` — removed in `63f4e27`; replaced by E8 above when we want lint back.
