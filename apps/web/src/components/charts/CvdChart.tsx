@@ -177,26 +177,21 @@ export default function CvdChart({
     chartRef.current.timeScale().fitContent();
   }, []);
 
-  // ── Mount chart (runs once per height change) ─────────────────────────────
+  // ── Mount chart ONCE. `autoSize` lets lightweight-charts fit the container
+  //    via its own ResizeObserver — fixing the unsized 300×150 canvas (manual
+  //    width/height raced the layout) AND the orphan double-mount that the old
+  //    height-keyed effect produced when the async import() resolved late.
   useEffect(() => {
     if (!containerRef.current || typeof window === 'undefined') return;
 
-    let chart: IChartApi;
-    let candleSeries: ISeriesApi<'Candlestick'>;
-    let deltaSeries: ISeriesApi<'Histogram'>;
-    let cvdLineSeries: ISeriesApi<'Line'>;
-    let ro: ResizeObserver;
+    let cancelled = false;
 
     // Lazy-load lightweight-charts to avoid SSR issues
     import('lightweight-charts').then(({ createChart, CrosshairMode }) => {
-      if (!containerRef.current) return;
+      if (cancelled || !containerRef.current) return;
 
-      const container = containerRef.current;
-      const w = container.clientWidth || 800;
-
-      chart = createChart(container, {
-        width: w,
-        height,
+      const chart = createChart(containerRef.current, {
+        autoSize: true,
         layout: {
           background: { color: '#0a0a0b' },
           textColor: '#8a8f9b',
@@ -228,7 +223,7 @@ export default function CvdChart({
       chartRef.current = chart;
 
       // ── Top pane: Candlestick series ─────────────────────────────────────
-      candleSeries = chart.addCandlestickSeries({
+      const candleSeries = chart.addCandlestickSeries({
         upColor:        '#22d3ee',
         downColor:      '#f97366',
         borderUpColor:  '#22d3ee',
@@ -240,7 +235,7 @@ export default function CvdChart({
       candleSeriesRef.current = candleSeries;
 
       // ── Bottom pane: Delta histogram ──────────────────────────────────────
-      deltaSeries = chart.addHistogramSeries({
+      const deltaSeries = chart.addHistogramSeries({
         color:       '#22d3ee40',
         priceScaleId:'cvd-delta',
         priceFormat: { type: 'volume' },
@@ -255,7 +250,7 @@ export default function CvdChart({
       deltaSeriesRef.current = deltaSeries;
 
       // ── Bottom pane: CVD line ─────────────────────────────────────────────
-      cvdLineSeries = chart.addLineSeries({
+      const cvdLineSeries = chart.addLineSeries({
         color:                        '#22d3ee',
         lineWidth:                    1,
         priceScaleId:                 'cvd-line',
@@ -277,22 +272,10 @@ export default function CvdChart({
       if (barsRef.current.length > 0) {
         populateChart(barsRef.current);
       }
-
-      // ── ResizeObserver: fill container width ──────────────────────────────
-      ro = new ResizeObserver(entries => {
-        for (const entry of entries) {
-          const newWidth = entry.contentRect.width;
-          if (newWidth > 0) {
-            chart.applyOptions({ width: newWidth });
-          }
-        }
-      });
-      ro.observe(container);
-      resizeObserverRef.current = ro;
     });
 
     return () => {
-      resizeObserverRef.current?.disconnect();
+      cancelled = true;
       chartRef.current?.remove();
       chartRef.current        = null;
       candleSeriesRef.current = null;
@@ -300,7 +283,7 @@ export default function CvdChart({
       cvdLineSeriesRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [height]);
+  }, []);
 
   // Re-populate when instrument changes (chart already mounted)
   useEffect(() => {
