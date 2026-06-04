@@ -1,4 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { auth } from '@/lib/auth';
+import { db } from '@/lib/db';
+import { requireChartLayer } from '@/lib/chart-tier';
+
+export const dynamic = 'force-dynamic';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -185,12 +190,51 @@ function computeVolumeProfile(bars: FootprintBar[]): { vpoc: number; vah: number
   return { vpoc, val: entries[lo].price, vah: entries[hi].price };
 }
 
+// ─── Real footprint_bars → FootprintBar mapper ───────────────────────────────
+
+interface FootprintRow {
+  ts: number; open: number; high: number; low: number; close: number;
+  buy_vol: number; sell_vol: number; delta: number;
+  levels: Record<string, { buy: number; sell: number }> | null;
+}
+
+function mapDbRows(rows: FootprintRow[]): FootprintBar[] {
+  const asc = [...rows].reverse(); // query returns DESC; CVD accumulates forward
+  let cvd = 0;
+  return asc.map(r => {
+    const levelsObj = (r.levels ?? {}) as Record<string, { buy: number; sell: number }>;
+    const levels: FootprintLevel[] = Object.entries(levelsObj)
+      .map(([p, v]) => {
+        const bidVol = Number(v.buy) || 0;
+        const askVol = Number(v.sell) || 0;
+        return { price: parseFloat(p), bidVol, askVol, delta: bidVol - askVol, imbalance: askVol > 0 ? +(bidVol / askVol).toFixed(3) : 99 };
+      })
+      .sort((a, b) => a.price - b.price);
+
+    let maxVol = -1;
+    let pocPrice = levels[0]?.price ?? Number(r.close);
+    for (const l of levels) { const v = l.bidVol + l.askVol; if (v > maxVol) { maxVol = v; pocPrice = l.price; } }
+
+    const delta = Number(r.delta) || 0;
+    cvd += delta;
+    return {
+      ts: Number(r.ts), open: Number(r.open), high: Number(r.high), low: Number(r.low), close: Number(r.close),
+      volume: (Number(r.buy_vol) || 0) + (Number(r.sell_vol) || 0), delta, cvd, pocPrice, levels,
+    };
+  });
+}
+
 // ─── Route Handler ────────────────────────────────────────────────────────────
 
 export async function GET(
   req: NextRequest,
   { params }: { params: Promise<{ instrument: string }> },
 ) {
+  // Footprint is a Starter+ chart layer.
+  const session = await auth();
+  const gate = requireChartLayer(session, 'footprint_chart', 'footprint');
+  if (gate) return gate;
+
   const { instrument } = await params;
   const { searchParams } = new URL(req.url);
 
@@ -205,11 +249,42 @@ export async function GET(
   }
 
   const upper = instrument.toUpperCase();
-  const bars  = generateFootprintBars(upper, tf, limit);
-  const vp    = computeVolumeProfile(bars);
+
+  // Prefer real footprint_bars (the footprint publisher); fall back to a
+  // deterministic synthetic profile for instruments with no ingest yet.
+  let bars: FootprintBar[] = [];
+  let source: 'live' | 'synthetic' = 'synthetic';
+  try {
+    // Pin to a single exchange (the one with the freshest data for this
+    // instrument) so bars from different venues don't interleave at the same ts.
+    const rows = await db.$queryRaw<FootprintRow[]>`
+      SELECT extract(epoch from ts) * 1000 AS ts,
+             open::float8, high::float8, low::float8, close::float8,
+             buy_vol::float8, sell_vol::float8, delta::float8, levels
+      FROM footprint_bars
+      WHERE instrument = ${upper} AND timeframe = ${tf}
+        AND exchange = (
+          SELECT exchange FROM footprint_bars
+          WHERE instrument = ${upper} AND timeframe = ${tf}
+          ORDER BY ts DESC LIMIT 1
+        )
+      ORDER BY ts DESC
+      LIMIT ${limit}
+    `;
+    if (rows.length > 0) {
+      bars = mapDbRows(rows);
+      source = 'live';
+    }
+  } catch { /* table/query issue — fall back to synthetic */ }
+
+  if (bars.length === 0) {
+    bars = generateFootprintBars(upper, tf, limit);
+  }
+
+  const vp = computeVolumeProfile(bars);
 
   return NextResponse.json(
-    { instrument: upper, timeframe: tf, bars, ...vp },
-    { headers: { 'Cache-Control': 's-maxage=30, stale-while-revalidate=60' } },
+    { instrument: upper, timeframe: tf, source, bars, ...vp },
+    { headers: { 'Cache-Control': 'no-store' } },
   );
 }
