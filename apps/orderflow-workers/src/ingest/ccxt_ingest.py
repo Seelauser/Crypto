@@ -55,6 +55,10 @@ OB_DEPTH = 20
 # watchOrderBook RPC. Snap requested depth to the closest allowed value.
 EXCHANGE_OB_DEPTH_WHITELIST: dict[str, list[int]] = {
     "kraken": [10, 25, 100, 500, 1000],
+    "bybit":  [1, 50, 200, 1000],
+    # OKX: only the public books5 (5) / books (400) channels are keyless;
+    # numeric levels like 50 hit auth-gated "books-l2-tbt" feeds.
+    "okx":    [5, 400],
 }
 
 
