@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
-import { canUseFeature } from '@/lib/limits';
-import type { UserTier } from '@orderflow/types';
+import { requireChartLayer } from '@/lib/chart-tier';
 
 // Volume profile (rework spec §10.1 / P4-3). Computes VPOC / VAH / VAL from
 // recent OHLCV bars, server-side. Starter+ (volume profile is a paid layer).
@@ -13,14 +12,8 @@ const VALUE_AREA = 0.70; // 70% of volume around the POC
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ instrument: string }> }) {
   const session = await auth();
-  if (!session?.user?.id) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
-  const tier = ((session.user as any).tier ?? 'free') as UserTier;
-  if (!canUseFeature(tier, 'footprint_chart')) {
-    // Volume profile rides the same Starter+ chart-layer gate as footprint.
-    return NextResponse.json({ error: 'tier_gate', feature: 'volume_profile', tierRequired: 'starter', upgradeUrl: '/billing/upgrade?from=volume_profile' }, { status: 403 });
-  }
+  const gate = requireChartLayer(session, 'footprint_chart', 'volume_profile');
+  if (gate) return gate;
 
   const { instrument } = await params;
 

@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
-import { canUseFeature } from '@/lib/limits';
-import type { UserTier } from '@orderflow/types';
+import { requireChartLayer } from '@/lib/chart-tier';
 
 // Order-book snapshot history (rework spec §10.1 / P4-2) — feeds the order-book
 // heatmap background. Starter+ (heatmap is a paid layer). Reads the
@@ -11,13 +10,8 @@ export const dynamic = 'force-dynamic';
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ instrument: string }> }) {
   const session = await auth();
-  if (!session?.user?.id) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
-  const tier = ((session.user as any).tier ?? 'free') as UserTier;
-  if (!canUseFeature(tier, 'heatmap')) {
-    return NextResponse.json({ error: 'tier_gate', feature: 'orderbook_heatmap', tierRequired: 'starter', upgradeUrl: '/billing/upgrade?from=heatmap' }, { status: 403 });
-  }
+  const gate = requireChartLayer(session, 'heatmap', 'orderbook_heatmap');
+  if (gate) return gate;
 
   const { instrument } = await params;
   const exchange = req.nextUrl.searchParams.get('exchange') ?? 'binance';

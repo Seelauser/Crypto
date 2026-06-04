@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import redis from '@/lib/redis';
-import { canUseFeature } from '@/lib/limits';
-import type { UserTier } from '@orderflow/types';
+import { requireChartLayer } from '@/lib/chart-tier';
 
 // Derivatives metrics (rework spec §10.1 / P4-4) — current funding rate, mark
 // price and open interest from the keyless Binance-futures publisher
@@ -11,14 +10,8 @@ export const dynamic = 'force-dynamic';
 
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ instrument: string }> }) {
   const session = await auth();
-  if (!session?.user?.id) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
-  const tier = ((session.user as any).tier ?? 'free') as UserTier;
-  // Funding/OI overlay rides the Starter+ chart-layer gate.
-  if (!canUseFeature(tier, 'footprint_chart')) {
-    return NextResponse.json({ error: 'tier_gate', feature: 'derivatives', tierRequired: 'starter', upgradeUrl: '/billing/upgrade?from=derivatives' }, { status: 403 });
-  }
+  const gate = requireChartLayer(session, 'footprint_chart', 'derivatives');
+  if (gate) return gate;
 
   const { instrument } = await params;
 
