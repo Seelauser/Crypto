@@ -87,6 +87,8 @@ export interface PlacementInputs {
   sweep?:         { side: 'buy' | 'sell'; absorbed?: boolean } | null;
   /** Top-of-book imbalance. */
   imbalance?:     { ratio: number; dominant: 'bid' | 'ask' } | null;
+  /** Perp funding rate (fraction, e.g. 0.0001 = 0.01%). */
+  funding?:       number | null;
   regime?:        string | null;
   ts?:            number;
 }

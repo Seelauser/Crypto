@@ -50,11 +50,12 @@ export function usePlacementSignal(instrument: string, enabled = true): Placemen
     sweeps: { side: 'buy' | 'sell'; notionalUsd: number; ts: number; absorbed: boolean }[];
     lastAbsorbTs: number;
     divergence: { kind: 'bullish' | 'bearish'; strength?: number } | null;
-  }>({ cvd: null, cvdPrev: null, imbalance: null, sweeps: [], lastAbsorbTs: 0, divergence: null });
+    funding: number | null;
+  }>({ cvd: null, cvdPrev: null, imbalance: null, sweeps: [], lastAbsorbTs: 0, divergence: null, funding: null });
 
   useEffect(() => {
     if (!enabled || !instrument || typeof window === 'undefined') return;
-    roll.current = { cvd: null, cvdPrev: null, imbalance: null, sweeps: [], lastAbsorbTs: 0, divergence: null };
+    roll.current = { cvd: null, cvdPrev: null, imbalance: null, sweeps: [], lastAbsorbTs: 0, divergence: null, funding: null };
     let closed = false;
     let ws: WebSocket | null = null;
 
@@ -68,6 +69,7 @@ export function usePlacementSignal(instrument: string, enabled = true): Placemen
         divergence: r.divergence,
         imbalance:  r.imbalance,
         sweep:      recentSweep ? { side: recentSweep.side, absorbed: recentSweep.absorbed } : null,
+        funding:    r.funding,
         ts:         Date.now(),
       };
       const signal = scorePlacement(inputs);
@@ -94,6 +96,19 @@ export function usePlacementSignal(instrument: string, enabled = true): Placemen
     };
     void fetchDivergence();
     const divTimer = setInterval(fetchDivergence, 60_000);
+
+    // ── Funding poll (the derivatives publisher refreshes every ~30s) ──────
+    const fetchFunding = async () => {
+      try {
+        const res = await fetch(`/api/markets/${encodeURIComponent(instrument)}/derivatives`);
+        if (!res.ok) return;
+        const { current } = await res.json() as { current: { funding_rate?: number } | null };
+        roll.current.funding = current && typeof current.funding_rate === 'number' ? current.funding_rate : null;
+        recompute();
+      } catch { /* ignore */ }
+    };
+    void fetchFunding();
+    const fundingTimer = setInterval(fetchFunding, 30_000);
 
     // ── Live order-flow WebSocket ──────────────────────────────────────────
     const connect = () => {
@@ -145,7 +160,7 @@ export function usePlacementSignal(instrument: string, enabled = true): Placemen
     };
     connect();
 
-    return () => { closed = true; clearInterval(divTimer); ws?.close(); };
+    return () => { closed = true; clearInterval(divTimer); clearInterval(fundingTimer); ws?.close(); };
   }, [instrument, enabled]);
 
   return state;

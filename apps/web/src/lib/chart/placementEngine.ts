@@ -85,6 +85,11 @@ export function scorePlacement(inputs: PlacementInputs): PlacementSignal {
     push('cvd_cross', `CVD crossed zero (${inputs.cvd > 0 ? 'turned positive' : 'turned negative'})`);
   }
 
+  // funding_extreme (8) — perp funding rate ±0.1% (crowding → reversal risk).
+  if (inputs.funding != null && Math.abs(inputs.funding) >= 0.001) {
+    push('funding_extreme', `funding ${(inputs.funding * 100).toFixed(3)}% (${inputs.funding > 0 ? 'longs crowded' : 'shorts crowded'})`);
+  }
+
   // ── Score ──────────────────────────────────────────────────────────────────
   const sum        = triggers.reduce((s, t) => s + t.weight, 0);
   const confidence = Math.min(100, Math.round((sum / MAX_WEIGHT_SUM) * 100));
