@@ -77,6 +77,9 @@ export default function CvdChart({
   const cvdLineSeriesRef = useRef<ISeriesApi<'Line'> | null>(null);
   const resizeObserverRef = useRef<ResizeObserver | null>(null);
   const barsRef          = useRef<OhlcvBar[]>([]);
+  // Current height, read by the mount-once effect without re-running it.
+  const heightRef        = useRef(height);
+  heightRef.current = height;
   const [loading, setLoading] = useState(true);
   const [error, setError]     = useState<string | null>(null);
 
@@ -177,21 +180,26 @@ export default function CvdChart({
     chartRef.current.timeScale().fitContent();
   }, []);
 
-  // ── Mount chart ONCE. `autoSize` lets lightweight-charts fit the container
-  //    via its own ResizeObserver — fixing the unsized 300×150 canvas (manual
-  //    width/height raced the layout) AND the orphan double-mount that the old
-  //    height-keyed effect produced when the async import() resolved late.
+  // ── Mount chart ONCE. The old effect was keyed on [height], so a height
+  //    change recreated the chart; because lightweight-charts is imported
+  //    async, the old import() could resolve after cleanup → an orphan chart
+  //    instance whose opaque background hid the real one. We mount once and
+  //    apply width/height imperatively (autoSize:true did not size reliably in
+  //    v4.2.3, so we keep explicit width + a ResizeObserver).
   useEffect(() => {
     if (!containerRef.current || typeof window === 'undefined') return;
 
     let cancelled = false;
+    let ro: ResizeObserver | undefined;
 
     // Lazy-load lightweight-charts to avoid SSR issues
     import('lightweight-charts').then(({ createChart, CrosshairMode }) => {
       if (cancelled || !containerRef.current) return;
 
-      const chart = createChart(containerRef.current, {
-        autoSize: true,
+      const container = containerRef.current;
+      const chart = createChart(container, {
+        width:  container.clientWidth || 800,
+        height: heightRef.current || 420,
         layout: {
           background: { color: '#0a0a0b' },
           textColor: '#8a8f9b',
@@ -272,10 +280,23 @@ export default function CvdChart({
       if (barsRef.current.length > 0) {
         populateChart(barsRef.current);
       }
+
+      // Keep the chart's width synced to the container (the container starts
+      // 0-wide before layout settles, so the 800px create-time fallback is
+      // corrected here once the real width is known).
+      ro = new ResizeObserver(entries => {
+        for (const entry of entries) {
+          const w = entry.contentRect.width;
+          if (w > 0) chart.applyOptions({ width: Math.floor(w) });
+        }
+      });
+      ro.observe(container);
+      resizeObserverRef.current = ro;
     });
 
     return () => {
       cancelled = true;
+      resizeObserverRef.current?.disconnect();
       chartRef.current?.remove();
       chartRef.current        = null;
       candleSeriesRef.current = null;
@@ -284,6 +305,11 @@ export default function CvdChart({
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Apply height changes in place (never remount — that caused the orphan).
+  useEffect(() => {
+    chartRef.current?.applyOptions({ height });
+  }, [height]);
 
   // Re-populate when instrument changes (chart already mounted)
   useEffect(() => {
