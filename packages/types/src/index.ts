@@ -251,6 +251,17 @@ export interface LlmCallRecord {
 // ─── WebSocket Messages ───────────────────────────────────────────────────────
 
 export type WsMessageType =
+  // As emitted by the WS gateway: it serialises each Redis channel as
+  // `channel.replace(':','_')`, hence the `market_*` forms below.
+  | 'market_ticks'
+  | 'market_orderbook'
+  | 'market_cvd_update'
+  | 'market_imbalance_update'
+  | 'market_sweep_detected'
+  | 'market_absorption_detected'
+  | 'market_regime_change'
+  | 'market_whale_classified'
+  // Legacy / control message types (kept for back-compat).
   | 'tick'
   | 'orderbook'
   | 'cvd_update'

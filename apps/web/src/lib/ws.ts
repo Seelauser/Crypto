@@ -87,7 +87,10 @@ function handleMessage(raw: MessageEvent<string>) {
   wsState.lastMessage = msg;
   notifyStateListeners();
 
-  if (msg.type === 'tick') {
+  // The WS gateway serialises each Redis channel as `type: channel.replace(':','_')`,
+  // so `market:ticks` → `market_ticks` and `market:cvd_update` → `market_cvd_update`.
+  // (This previously checked the un-prefixed names, so live ticks/CVD never updated.)
+  if (msg.type === 'market_ticks' || msg.type === 'tick') {
     const tick = msg.data as Tick;
     if (tick?.instrument) {
       emitTick(tick.instrument, tick);
@@ -95,7 +98,7 @@ function handleMessage(raw: MessageEvent<string>) {
     return;
   }
 
-  if (msg.type === 'cvd_update') {
+  if (msg.type === 'market_cvd_update' || msg.type === 'cvd_update') {
     const point = msg.data as CvdPoint & { instrument?: string };
     if (point) {
       emitCvd((point as any).instrument ?? 'unknown', point);
