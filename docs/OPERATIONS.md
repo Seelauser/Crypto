@@ -34,10 +34,13 @@ All units live under `/etc/systemd/system/orderflow-*.service`. Configured with 
 | `orderflow-ingest-binance.service` | Binance L2 ingest (CCXT Pro) | — | redis |
 | `orderflow-ingest-coinbase.service` | Coinbase L2 ingest | — | redis |
 | `orderflow-ingest-kraken.service` | Kraken L2 ingest | — | redis |
+| `orderflow-ingest-bybit.service` | Bybit L2 ingest (keyless) | — | redis |
+| `orderflow-ingest-okx.service` | OKX L2 ingest (keyless, public books5/books) | — | redis |
 | `orderflow-persistence.service` | Redis pubsub → TimescaleDB | — | redis, pg |
 | `orderflow-streaming.service` | CVD/large-print/sweep analytics | — | redis |
 | `orderflow-divergence-publisher.service` | Bullish/bearish divergence scanner (120s loop) | — | pg, redis, persistence |
 | `orderflow-regime-publisher.service` | HMM regime detector (60s loop, writes `market:regime` hash) | — | pg, redis, persistence |
+| `orderflow-derivatives-publisher.service` | Binance futures funding/OI poller (30s loop, keyless → `market:derivatives` + `derivatives_metrics`) | — | pg, redis |
 | `orderflow-trigger-evaluator.service` | Listens to analytics events, fires user signals | — | redis, api |
 | `orderflow-notification-dispatcher.service` | Email/push/Telegram fan-out for signal events | — | redis, api |
 
