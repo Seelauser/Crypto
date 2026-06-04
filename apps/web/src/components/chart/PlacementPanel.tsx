@@ -1,5 +1,6 @@
 'use client';
 
+import { useCallback, useEffect, useState } from 'react';
 import { usePlacementSignal } from '@/lib/chart/usePlacementSignal';
 import { EMIT_THRESHOLD } from '@/lib/chart/types';
 
@@ -37,6 +38,40 @@ export default function PlacementPanel({
   const isPaid = tier !== 'free';
   const st = usePlacementSignal(instrument, isPaid);
 
+  const [explain, setExplain] = useState<{ text: string; ai: boolean } | null>(null);
+  const [explaining, setExplaining] = useState(false);
+  const sig = st.signal;
+  const emitted = sig != null && sig.strength > 0;
+
+  // Reset the explanation when the instrument or direction changes.
+  useEffect(() => { setExplain(null); }, [instrument, sig?.direction]);
+
+  const handleExplain = useCallback(async () => {
+    if (!sig || explaining) return;
+    setExplaining(true);
+    try {
+      const res = await fetch('/api/signals/chart-explain', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          instrument,
+          direction:  sig.direction,
+          confidence: sig.confidence,
+          triggers:   sig.triggers.map(t => t.type),
+          cvd:        sig.cvd,
+          regime:     sig.regime,
+        }),
+      });
+      const data = await res.json();
+      if (res.ok) setExplain({ text: data.explanation, ai: !!data.aiPowered });
+      else setExplain({ text: data.message ?? data.error ?? 'Could not explain this signal.', ai: false });
+    } catch {
+      setExplain({ text: 'Could not reach the explanation service.', ai: false });
+    } finally {
+      setExplaining(false);
+    }
+  }, [sig, instrument, explaining]);
+
   if (!isPaid) {
     return (
       <div style={{ padding: 24, textAlign: 'center', color: C.dim, fontSize: 13 }}>
@@ -54,8 +89,6 @@ export default function PlacementPanel({
     );
   }
 
-  const sig = st.signal;
-  const emitted = sig != null && sig.strength > 0;
   const dir = sig?.direction ?? 'neutral';
   const conf = sig?.confidence ?? 0;
 
@@ -109,6 +142,33 @@ export default function PlacementPanel({
           <div style={{ fontSize: 12, color: C.neutral }}>Waiting for order-flow triggers…</div>
         )}
       </div>
+
+      {/* AI explanation (emitted signals only) */}
+      {emitted && (
+        <div style={{ marginBottom: 14 }}>
+          {!explain ? (
+            <button
+              onClick={handleExplain}
+              disabled={explaining}
+              style={{
+                background: explaining ? C.panel : `${dirColor(dir)}1a`,
+                border: `1px solid ${dirColor(dir)}40`, color: dirColor(dir),
+                borderRadius: 6, padding: '7px 12px', fontSize: 12, fontWeight: 600,
+                cursor: explaining ? 'default' : 'pointer', width: '100%',
+              }}
+            >
+              {explaining ? 'Reading the flow…' : '✨ Explain this placement'}
+            </button>
+          ) : (
+            <div style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: 6, padding: '10px 12px' }}>
+              <div style={{ fontSize: 12, color: C.ink, lineHeight: 1.55 }}>{explain.text}</div>
+              <div style={{ fontSize: 9, color: C.dim, marginTop: 6, ...mono }}>
+                {explain.ai ? 'AI-generated' : 'order-flow read'}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Live telemetry */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
