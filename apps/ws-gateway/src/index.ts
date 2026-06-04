@@ -1,6 +1,6 @@
 import { WebSocketServer, WebSocket } from 'ws';
 import { createClient } from 'redis';
-import { IncomingMessage } from 'http';
+import { IncomingMessage, createServer } from 'http';
 
 const PORT = parseInt(process.env.WS_PORT ?? '4001');
 const REDIS_URL = process.env.REDIS_URL ?? 'redis://localhost:6379';
@@ -10,10 +10,28 @@ const clientSubscriptions = new Map<WebSocket, Set<string>>();
 // Reverse: channel → set of subscribed clients
 const channelClients = new Map<string, Set<WebSocket>>();
 
-const wss = new WebSocketServer({ port: PORT });
-
 const sub = createClient({ url: REDIS_URL });
 const pub = createClient({ url: REDIS_URL });
+
+// HTTP server backing the WS upgrade — also serves a /health probe (P6-2).
+const httpServer = createServer((req, res) => {
+  if (req.url === '/health' || req.url === '/healthz') {
+    const ok = sub.isReady && pub.isReady;
+    res.writeHead(ok ? 200 : 503, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({
+      status:  ok ? 'ok' : 'degraded',
+      service: 'ws-gateway',
+      checks:  { redis: ok ? 'ok' : 'down' },
+      clients: wss.clients.size,
+      ts:      Date.now(),
+    }));
+    return;
+  }
+  res.writeHead(404);
+  res.end();
+});
+
+const wss = new WebSocketServer({ server: httpServer });
 
 // Redis channels we forward to WS clients
 const FORWARDED_CHANNELS = [
@@ -52,7 +70,7 @@ async function bootstrap() {
   // Also subscribe per-user signal events (signal:triggered:<userId>)
   // These are handled dynamically as clients subscribe
 
-  console.log(`WS Gateway listening on :${PORT}`);
+  httpServer.listen(PORT, () => console.log(`WS Gateway listening on :${PORT} (+ /health)`));
 }
 
 function addSubscription(ws: WebSocket, channel: string) {
