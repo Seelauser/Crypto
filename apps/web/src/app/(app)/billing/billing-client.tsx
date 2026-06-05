@@ -95,7 +95,12 @@ export default function BillingClient({ tier, balanceCents, subscription, recent
   }
 
   return (
-    <div style={{ padding: 'clamp(12px, 4vw, 24px)', maxWidth: 900, margin: '0 auto' }}>
+    <div style={{
+      padding: 'clamp(12px, 4vw, 24px)',
+      paddingBottom: 'max(env(safe-area-inset-bottom, 16px), 24px)',
+      maxWidth: 900,
+      margin: '0 auto',
+    }}>
       <h1 style={{ fontSize: 20, fontWeight: 600, color: '#e6e8ee', marginBottom: 24 }}>Billing</h1>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 16, marginBottom: 28 }}>
@@ -115,7 +120,7 @@ export default function BillingClient({ tier, balanceCents, subscription, recent
           )}
           {tier !== 'pro' && (
             <button onClick={handleUpgrade}
-              style={{ marginTop: 12, background: '#22d3ee', color: '#0a0a0b', border: 'none', borderRadius: 6, padding: '8px 16px', fontWeight: 700, fontSize: 13, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, transition: 'opacity 150ms' }}
+              style={{ marginTop: 12, background: '#22d3ee', color: '#0a0a0b', border: 'none', borderRadius: 6, padding: '12px 18px', minHeight: 44, fontWeight: 700, fontSize: 13, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, transition: 'opacity 150ms' }}
               onMouseEnter={(e) => e.currentTarget.style.opacity = '0.9'}
               onMouseLeave={(e) => e.currentTarget.style.opacity = '1'}
             >
@@ -139,7 +144,7 @@ export default function BillingClient({ tier, balanceCents, subscription, recent
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                 {TOPUP_PACKS.map(p => (
                   <button key={p.label} onClick={() => handleTopup(p)}
-                    style={{ background: '#0a0a0b', border: '1px solid #2a2d36', borderRadius: 6, padding: '8px 16px', color: '#e6e8ee', fontSize: 13, cursor: 'pointer', fontFamily: 'JetBrains Mono, monospace', transition: 'all 150ms' }}
+                    style={{ background: '#0a0a0b', border: '1px solid #2a2d36', borderRadius: 6, padding: '12px 18px', minHeight: 44, color: '#e6e8ee', fontSize: 13, cursor: 'pointer', fontFamily: 'JetBrains Mono, monospace', transition: 'all 150ms' }}
                     onMouseEnter={(e) => e.currentTarget.style.borderColor = '#22d3ee'}
                     onMouseLeave={(e) => e.currentTarget.style.borderColor = '#2a2d36'}
                   >

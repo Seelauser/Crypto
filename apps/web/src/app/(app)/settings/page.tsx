@@ -44,7 +44,12 @@ export default function SettingsPage() {
   }
 
   return (
-    <div style={{ padding: 'clamp(12px, 4vw, 24px)', maxWidth: 700, margin: '0 auto' }}>
+    <div style={{
+      padding: 'clamp(12px, 4vw, 24px)',
+      paddingBottom: 'max(env(safe-area-inset-bottom, 16px), 24px)',
+      maxWidth: 700,
+      margin: '0 auto',
+    }}>
       <h1 style={{ fontSize: 20, fontWeight: 600, color: '#e6e8ee', marginBottom: 24 }}>Settings</h1>
 
       {/* Profile section */}
@@ -53,9 +58,10 @@ export default function SettingsPage() {
           <User size={15} color="#8a8f9b" />
           <h2 style={{ fontSize: 13, fontWeight: 600, color: '#e6e8ee', margin: 0 }}>Account</h2>
         </div>
-        <div style={{ display: 'flex', gap: 20, fontSize: 13, color: '#8a8f9b' }}>
-          <span><span style={{ color: '#5a5f6a' }}>Username: </span>{session?.user?.name}</span>
-          <span><span style={{ color: '#5a5f6a' }}>Email: </span>{session?.user?.email}</span>
+        {/* Account rows: wrap + column gap on mobile so long emails don't push the row off-screen. */}
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px 20px', fontSize: 13, color: '#8a8f9b' }}>
+          <span style={{ minWidth: 0, overflowWrap: 'anywhere' }}><span style={{ color: '#5a5f6a' }}>Username: </span>{session?.user?.name}</span>
+          <span style={{ minWidth: 0, overflowWrap: 'anywhere' }}><span style={{ color: '#5a5f6a' }}>Email: </span>{session?.user?.email}</span>
           <span><span style={{ color: '#5a5f6a' }}>Plan: </span>
             <span style={{ color: tier === 'pro' ? '#22d3ee' : '#e6e8ee', textTransform: 'capitalize' }}>{tier}</span>
           </span>
@@ -100,7 +106,7 @@ export default function SettingsPage() {
             </div>
           ) : (
             <button onClick={generateTelegramLink} disabled={loadingTelegram}
-              style={{ background: '#13141a', border: '1px solid #2a2d36', borderRadius: 6, padding: '8px 16px', color: '#e6e8ee', fontSize: 13, cursor: 'pointer' }}>
+              style={{ background: '#13141a', border: '1px solid #2a2d36', borderRadius: 6, padding: '12px 18px', minHeight: 44, color: '#e6e8ee', fontSize: 13, cursor: 'pointer' }}>
               {loadingTelegram ? 'Generating...' : 'Connect Telegram'}
             </button>
           )}
@@ -121,21 +127,23 @@ export default function SettingsPage() {
                 We'll POST a HMAC-signed JSON payload to your endpoint on every signal trigger.
               </div>
               <input
-                style={{ background: '#0a0a0b', border: '1px solid #1f2128', borderRadius: 6, color: '#e6e8ee', padding: '8px 12px', fontSize: 13, outline: 'none' }}
+                style={{ background: '#0a0a0b', border: '1px solid #1f2128', borderRadius: 6, color: '#e6e8ee', padding: '12px 14px', minHeight: 44, fontSize: 14, outline: 'none' }}
                 placeholder="https://your-server.com/webhook"
+                inputMode="url"
                 value={webhookUrl}
                 onChange={e => setWebhookUrl(e.target.value)}
               />
               <input
-                style={{ background: '#0a0a0b', border: '1px solid #1f2128', borderRadius: 6, color: '#e6e8ee', padding: '8px 12px', fontSize: 13, outline: 'none', fontFamily: 'JetBrains Mono, monospace' }}
+                style={{ background: '#0a0a0b', border: '1px solid #1f2128', borderRadius: 6, color: '#e6e8ee', padding: '12px 14px', minHeight: 44, fontSize: 14, outline: 'none', fontFamily: 'JetBrains Mono, monospace' }}
                 placeholder="HMAC signing secret (optional)"
                 value={webhookSecret}
                 onChange={e => setWebhookSecret(e.target.value)}
                 type="password"
+                autoComplete="off"
               />
               <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                 <button onClick={saveWebhook} disabled={webhookSaving || !webhookUrl}
-                  style={{ background: '#22d3ee', color: '#0a0a0b', border: 'none', borderRadius: 6, padding: '8px 16px', fontWeight: 600, fontSize: 13, cursor: 'pointer', opacity: !webhookUrl ? 0.5 : 1 }}>
+                  style={{ background: '#22d3ee', color: '#0a0a0b', border: 'none', borderRadius: 6, padding: '12px 18px', minHeight: 44, fontWeight: 600, fontSize: 13, cursor: 'pointer', opacity: !webhookUrl ? 0.5 : 1 }}>
                   {webhookSaving ? 'Saving...' : 'Save Webhook'}
                 </button>
                 {webhookSaved && <span style={{ fontSize: 12, color: '#22c55e' }}>Saved!</span>}

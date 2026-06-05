@@ -51,7 +51,12 @@ export default function SignalsClient({ setups, recentEvents, tier }: Props) {
   }
 
   return (
-    <div style={{ padding: 'clamp(12px, 4vw, 24px)', maxWidth: 1200, margin: '0 auto' }}>
+    <div style={{
+      padding: 'clamp(12px, 4vw, 24px)',
+      paddingBottom: 'max(env(safe-area-inset-bottom, 16px), 24px)',
+      maxWidth: 1200,
+      margin: '0 auto',
+    }}>
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24 }}>
         <div>
@@ -67,7 +72,8 @@ export default function SignalsClient({ setups, recentEvents, tier }: Props) {
             color: '#0a0a0b',
             border: 'none',
             borderRadius: 6,
-            padding: '8px 16px',
+            padding: '12px 18px',
+            minHeight: 44,
             fontWeight: 600,
             fontSize: 13,
             cursor: 'pointer',

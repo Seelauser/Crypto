@@ -51,7 +51,12 @@ export default function ScansPage() {
   }
 
   return (
-    <div style={{ padding: 'clamp(12px, 4vw, 24px)', maxWidth: 1200, margin: '0 auto' }}>
+    <div style={{
+      padding: 'clamp(12px, 4vw, 24px)',
+      paddingBottom: 'max(env(safe-area-inset-bottom, 16px), 24px)',
+      maxWidth: 1200,
+      margin: '0 auto',
+    }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24 }}>
         <div>
           <h1 style={{ fontSize: 20, fontWeight: 600, color: '#e6e8ee', margin: 0 }}>Live Order Flow Scan</h1>
