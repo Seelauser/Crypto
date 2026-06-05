@@ -1,6 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import type { PrismaClient } from '@prisma/client';
 import { recordCacheEvent, estimateTokens } from './cache-observability';
+import { getFeatureSystemPrompt } from '@orderflow/llm-prompts';
 
 // ─── Feature / Model Types ────────────────────────────────────────────────────
 // This package owns the exhaustive feature → model mapping, the per-model
@@ -177,16 +178,23 @@ export function resolveModel(
 
 /**
  * Returns a new array with `cache_control: { type: 'ephemeral' }` attached to
- * the last block. Idempotent — re-attaching to an already-marked block is a
- * harmless no-op. Does not mutate the input.
+ * each block — Anthropic supports up to 4 cache breakpoints per request, and
+ * marking every system block lets us chain a global prompt + per-feature
+ * prompt and have both reused across calls (C4). For one-block callers this
+ * is identical to the old "mark only the last" behavior. Idempotent.
  */
-function withEphemeralCacheOnLast(
+function withEphemeralCacheOnAll(
   blocks: Anthropic.TextBlockParam[],
 ): Anthropic.TextBlockParam[] {
   if (blocks.length === 0) return blocks;
-
+  // Hard-cap at 4 — beyond that Anthropic rejects the call. Warn loudly so a
+  // future feature accidentally piling on extra blocks fails noisily, not
+  // silently in prod.
+  if (blocks.length > 4) {
+    console.warn(`[llm/router] >4 system blocks (${blocks.length}); only first 4 will be marked cacheable`);
+  }
   return blocks.map((block, idx) => {
-    if (idx !== blocks.length - 1) return block;
+    if (idx >= 4) return block;
     return {
       ...block,
       cache_control: { type: 'ephemeral' as const },
@@ -331,13 +339,21 @@ export async function callLlm(params: CallLlmParams): Promise<CallLlmResult> {
   const resolvedMessages =
     typeof messages === 'function' ? messages(model) : messages;
 
-  // 3. Cache the system prefix
-  const hadSystem = !!(systemBlocks && systemBlocks.length > 0);
+  // 3. Cache the system prefix.
+  //    C4 — append a per-feature system block (if defined) so callers get a
+  //    second cache breakpoint without manually wiring it. Each block is then
+  //    marked cacheable so both the global and feature prefixes get reused.
+  const featureExtra = getFeatureSystemPrompt(feature);
+  const enrichedBlocks: Anthropic.TextBlockParam[] = [
+    ...(systemBlocks ?? []),
+    ...(featureExtra ? [{ type: 'text' as const, text: featureExtra }] : []),
+  ];
+  const hadSystem = enrichedBlocks.length > 0;
   const systemParam: Anthropic.TextBlockParam[] | undefined = hadSystem
-    ? withEphemeralCacheOnLast(systemBlocks!)
+    ? withEphemeralCacheOnAll(enrichedBlocks)
     : undefined;
   const systemTokensEst = hadSystem
-    ? (systemBlocks ?? []).reduce((n, b) => n + estimateTokens(b.text ?? ''), 0)
+    ? enrichedBlocks.reduce((n, b) => n + estimateTokens(b.text ?? ''), 0)
     : 0;
 
   // 3a. No-key guard — surface the real reason in the cache log instead of an

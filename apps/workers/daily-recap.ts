@@ -14,7 +14,7 @@
 
 import { PrismaClient } from '@prisma/client';
 import { Resend } from 'resend';
-import { callLlm } from '@orderflow/llm';
+import { callLlm, prewarmCache } from '@orderflow/llm';
 import { buildDailyRecapPrompt, SYSTEM_PROMPT_CACHE_BLOCK } from '@orderflow/llm-prompts';
 import type { SignalSnapshot, SweepEvent } from '@orderflow/types';
 
@@ -259,6 +259,11 @@ async function processBatch(
 async function main() {
   const date = todayDateString();
   console.log(`[daily-recap] Starting daily recap generation for ${date}...`);
+
+  // C5 — pre-warm the prompt cache so the first user's recap doesn't pay the
+  // cache-write inline. Opus is the only model this job uses.
+  await prewarmCache([{ model: 'claude-opus-4-8', feature: 'daily_recap' }])
+    .catch(err => console.warn('[daily-recap] prewarm failed (non-fatal):', err?.message ?? err));
 
   // 1. Load all Pro users with at least one active (armed) signal setup.
   //    Daily recap is a Pro-tier feature (Opus-generated); Starter is excluded.

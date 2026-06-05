@@ -29,3 +29,8 @@ export type {
   CacheSeverity,
   CacheEventInput,
 } from './cache-observability';
+
+// Boot-time prompt-cache pre-warm (C5). Long-lived workers should call this
+// once on startup to move the first-call cache-write off the user-visible
+// latency path.
+export { prewarmCache } from './prewarm';

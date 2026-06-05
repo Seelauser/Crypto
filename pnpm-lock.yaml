@@ -325,6 +325,9 @@ importers:
       '@anthropic-ai/sdk':
         specifier: ^0.35.0
         version: 0.35.0
+      '@orderflow/llm-prompts':
+        specifier: workspace:*
+        version: link:../llm-prompts
       '@prisma/client':
         specifier: ^5.22.0
         version: 5.22.0(prisma@5.22.0)

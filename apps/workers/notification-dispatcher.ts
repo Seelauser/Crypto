@@ -13,7 +13,7 @@ import Redis from 'ioredis';
 import webpush from 'web-push';
 import { PrismaClient } from '@prisma/client';
 import { Resend } from 'resend';
-import { callLlm, type LlmModel } from '@orderflow/llm';
+import { callLlm, prewarmCache, type LlmModel } from '@orderflow/llm';
 import {
   buildSignalExplanationPrompt,
   buildSignalExplanationHaikuPrompt,
@@ -378,6 +378,14 @@ async function handleSignalTriggered(raw: string): Promise<void> {
 
 async function main() {
   console.log('[dispatcher] Starting notification dispatcher...');
+
+  // C5 — pre-warm the prompt cache before traffic arrives. signal_explanation
+  // is the dispatcher's only LLM feature; warming it covers free-tier (Haiku
+  // forced fallback inside callLlm) and premium (Sonnet) in one pass.
+  prewarmCache([
+    { model: 'claude-haiku-4-5-20251001', feature: 'signal_explanation_haiku' },
+    { model: 'claude-sonnet-4-6',         feature: 'signal_explanation' },
+  ]).catch(err => console.warn('[dispatcher] prewarm failed (non-fatal):', err?.message ?? err));
 
   await subscriber.subscribe('signal:triggered', (err) => {
     if (err) {
