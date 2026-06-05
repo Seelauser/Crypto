@@ -1,5 +1,6 @@
 import webpush from 'web-push';
 import { db } from '../db';
+import { log } from '../log';
 
 if (process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY) {
   webpush.setVapidDetails(
@@ -84,7 +85,7 @@ async function sendToSubscription(
     ) {
       await db.notificationChannel.delete({ where: { id: channelId } }).catch(() => {});
     } else {
-      console.error(`[push] sendToSubscription failed for user ${userId}:`, err);
+      log.error({ userId, channelId, err: (err as Error)?.message ?? String(err) }, 'push send failed');
     }
   }
 }

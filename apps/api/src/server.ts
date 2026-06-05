@@ -34,5 +34,5 @@ const PORT = parseInt(process.env.API_PORT ?? '4000');
 
 app.listen({ port: PORT, host: '0.0.0.0' }, (err) => {
   if (err) { app.log.error(err); process.exit(1); }
-  console.log(`API server running on :${PORT}`);
+  app.log.info({ port: PORT }, 'api server running');
 });

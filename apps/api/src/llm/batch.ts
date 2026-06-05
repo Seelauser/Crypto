@@ -9,6 +9,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { db } from '../db';
 import { computeCostCents, type LlmFeature, type LlmModel } from './router';
+import { log } from '../log';
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
@@ -137,6 +138,6 @@ async function logBatchCall(args: {
       },
     });
   } catch (err) {
-    console.error('[llm/batch] logBatchCall failed:', err);
+    log.error({ err: (err as Error)?.message ?? String(err) }, 'logBatchCall failed');
   }
 }

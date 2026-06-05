@@ -1,6 +1,13 @@
 import { WebSocketServer, WebSocket } from 'ws';
 import { createClient } from 'redis';
 import { IncomingMessage, createServer } from 'http';
+import pino from 'pino';
+
+const log = pino({
+  level: process.env.LOG_LEVEL ?? (process.env.NODE_ENV === 'production' ? 'info' : 'debug'),
+  base:  { worker: 'ws-gateway' },
+  timestamp: () => `,"time":"${new Date().toISOString()}"`,
+});
 
 const PORT = parseInt(process.env.WS_PORT ?? '4001');
 const REDIS_URL = process.env.REDIS_URL ?? 'redis://localhost:6379';
@@ -70,7 +77,7 @@ async function bootstrap() {
   // Also subscribe per-user signal events (signal:triggered:<userId>)
   // These are handled dynamically as clients subscribe
 
-  httpServer.listen(PORT, () => console.log(`WS Gateway listening on :${PORT} (+ /health)`));
+  httpServer.listen(PORT, () => log.info({ port: PORT, channels: FORWARDED_CHANNELS.length }, 'ws gateway listening (+ /health)'));
 }
 
 function addSubscription(ws: WebSocket, channel: string) {
@@ -145,6 +152,6 @@ const heartbeat = setInterval(() => {
 wss.on('close', () => clearInterval(heartbeat));
 
 bootstrap().catch(err => {
-  console.error('WS Gateway bootstrap failed:', err);
+  log.fatal({ err: err?.message ?? String(err) }, 'bootstrap failed');
   process.exit(1);
 });

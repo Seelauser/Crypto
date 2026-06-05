@@ -17,6 +17,9 @@ import { Resend } from 'resend';
 import { callLlm, prewarmCache } from '@orderflow/llm';
 import { buildDailyRecapPrompt, SYSTEM_PROMPT_CACHE_BLOCK } from '@orderflow/llm-prompts';
 import type { SignalSnapshot, SweepEvent } from '@orderflow/types';
+import { createWorkerLogger, newCorrelationId } from './lib/logger';
+
+const log = createWorkerLogger('daily-recap');
 
 // ─── Clients ──────────────────────────────────────────────────────────────────
 
@@ -75,6 +78,7 @@ async function generateUserRecap(
   date: string,
 ): Promise<RecapStats> {
   const userId = user.id;
+  const userLog = log.child({ cid: newCorrelationId(), userId, date });
 
   // a. Load last 24h signal events
   const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
@@ -167,7 +171,7 @@ async function generateUserRecap(
       messages:     [{ role: 'user', content: promptText }],
     });
   } catch (err) {
-    console.error(`[daily-recap] callLlm error for user ${userId}:`, err);
+    userLog.error({ err: (err as Error)?.message ?? String(err) }, 'callLlm error');
     return { userId, costCents: 0, success: false };
   }
 
@@ -225,9 +229,9 @@ async function generateUserRecap(
         }
       }
 
-      console.log(`[daily-recap] Sent ${kind} recap to user ${userId}`);
+      userLog.info({ channel: kind }, 'recap delivered');
     } catch (err) {
-      console.error(`[daily-recap] Failed to deliver ${kind} recap to user ${userId}:`, err);
+      userLog.error({ channel: kind, err: (err as Error)?.message ?? String(err) }, 'recap delivery failed');
     }
   }
 
@@ -258,12 +262,12 @@ async function processBatch(
 
 async function main() {
   const date = todayDateString();
-  console.log(`[daily-recap] Starting daily recap generation for ${date}...`);
+  log.info({ date }, 'starting daily recap generation');
 
   // C5 — pre-warm the prompt cache so the first user's recap doesn't pay the
   // cache-write inline. Opus is the only model this job uses.
   await prewarmCache([{ model: 'claude-opus-4-8', feature: 'daily_recap' }])
-    .catch(err => console.warn('[daily-recap] prewarm failed (non-fatal):', err?.message ?? err));
+    .catch(err => log.warn({ err: err?.message ?? String(err) }, 'prewarm failed (non-fatal)'));
 
   // 1. Load all Pro users with at least one active (armed) signal setup.
   //    Daily recap is a Pro-tier feature (Opus-generated); Starter is excluded.
@@ -286,7 +290,7 @@ async function main() {
     },
   });
 
-  console.log(`[daily-recap] Processing ${premiumUsers.length} premium user(s)...`);
+  log.info({ users: premiumUsers.length }, 'processing premium users');
 
   let totalProcessed = 0;
   let totalCostCents = 0;
@@ -301,7 +305,11 @@ async function main() {
       notificationChannels: Array<{ kind: string; config: Record<string, string> }>;
     }>;
 
-    console.log(`[daily-recap] Processing batch ${Math.floor(i / BATCH_SIZE) + 1} (users ${i + 1}–${Math.min(i + BATCH_SIZE, premiumUsers.length)})...`);
+    log.info({
+      batch: Math.floor(i / BATCH_SIZE) + 1,
+      from: i + 1,
+      to: Math.min(i + BATCH_SIZE, premiumUsers.length),
+    }, 'processing batch');
 
     const results = await processBatch(batch, date);
 
@@ -313,18 +321,19 @@ async function main() {
   }
 
   // 4. Log completion stats
-  const totalCostUsd = (totalCostCents / 100).toFixed(4);
-  console.log(`[daily-recap] Done.`);
-  console.log(`  Users processed : ${totalProcessed}`);
-  console.log(`  Successes       : ${totalSuccesses}`);
-  console.log(`  Failures        : ${totalProcessed - totalSuccesses}`);
-  console.log(`  Total cost      : ${totalCostCents} cents ($${totalCostUsd})`);
+  log.info({
+    processed: totalProcessed,
+    successes: totalSuccesses,
+    failures:  totalProcessed - totalSuccesses,
+    costCents: totalCostCents,
+    costUsd:   Number((totalCostCents / 100).toFixed(4)),
+  }, 'done');
 
   await db.$disconnect();
   process.exit(0);
 }
 
 main().catch(err => {
-  console.error('[daily-recap] Fatal error:', err);
+  log.fatal({ err: err?.message ?? String(err) }, 'fatal error');
   db.$disconnect().finally(() => process.exit(1));
 });

@@ -13,6 +13,7 @@ import Redis from 'ioredis';
 import webpush from 'web-push';
 import { PrismaClient } from '@prisma/client';
 import { Resend } from 'resend';
+import type { Logger } from 'pino';
 import { callLlm, prewarmCache, type LlmModel } from '@orderflow/llm';
 import {
   buildSignalExplanationPrompt,
@@ -20,6 +21,9 @@ import {
   SYSTEM_PROMPT_CACHE_BLOCK,
 } from '@orderflow/llm-prompts';
 import type { SignalSnapshot } from '@orderflow/types';
+import { createWorkerLogger, newCorrelationId } from './lib/logger';
+
+const log = createWorkerLogger('dispatcher');
 
 // ─── Clients ──────────────────────────────────────────────────────────────────
 
@@ -78,6 +82,7 @@ async function generateExplanation(
   tier: 'free' | 'premium',
   snapshot: SignalSnapshot,
   setupName: string,
+  logger: Logger,
 ): Promise<{ explanation: string; model: LlmModel; costCents: number } | null> {
   // Free tier: enforce the daily AI quota here (Redis counter + DB mirror)
   // before spending. Premium metering happens inside callLlm via the ledger.
@@ -89,7 +94,7 @@ async function generateExplanation(
 
     if (used > FREE_AI_QUOTA) {
       await redisClient.decr(redisKey);
-      console.log(`[dispatcher] Free quota exhausted for user ${userId} — skipping AI`);
+      logger.info({ userId, quota: FREE_AI_QUOTA }, 'free quota exhausted — skipping AI');
       return null;
     }
 
@@ -122,7 +127,7 @@ async function generateExplanation(
     });
     return { explanation: result.text, model: result.model, costCents: result.costCents };
   } catch (err) {
-    console.error('[dispatcher] callLlm error:', err);
+    logger.error({ err: (err as Error)?.message ?? String(err) }, 'callLlm error');
     return null;
   }
 }
@@ -222,17 +227,20 @@ async function deliverWebhook(url: string, secret: string, payload: Record<strin
 // ─── Core event handler ───────────────────────────────────────────────────────
 
 async function handleSignalTriggered(raw: string): Promise<void> {
+  const cid = newCorrelationId();
+  const evLog = log.child({ cid });
+
   let msg: SignalTriggeredMessage;
   try {
     msg = JSON.parse(raw) as SignalTriggeredMessage;
   } catch {
-    console.error('[dispatcher] Failed to parse message:', raw.slice(0, 200));
+    evLog.error({ rawPreview: raw.slice(0, 200) }, 'failed to parse message');
     return;
   }
 
   const { setup_id, user_id, instrument, snapshot, ts } = msg;
-
-  console.log(`[dispatcher] Signal triggered: setup=${setup_id} instrument=${instrument}`);
+  const ctxLog = evLog.child({ setupId: setup_id, userId: user_id, instrument });
+  ctxLog.info('signal triggered');
 
   // a. Load setup + user + channels
   const [setup, user] = await Promise.all([
@@ -246,7 +254,7 @@ async function handleSignalTriggered(raw: string): Promise<void> {
   ]);
 
   if (!setup || !user) {
-    console.error(`[dispatcher] Setup or user not found: setup=${setup_id} user=${user_id}`);
+    ctxLog.error({ setupFound: !!setup, userFound: !!user }, 'setup or user not found');
     return;
   }
 
@@ -262,10 +270,10 @@ async function handleSignalTriggered(raw: string): Promise<void> {
   let aiResult: Awaited<ReturnType<typeof generateExplanation>> = null;
   try {
     if (process.env.ANTHROPIC_API_KEY) {
-      aiResult = await generateExplanation(user_id, billingTier, snapshot, setup.name);
+      aiResult = await generateExplanation(user_id, billingTier, snapshot, setup.name, ctxLog);
     }
   } catch (err) {
-    console.error('[dispatcher] generateExplanation failed (continuing without AI):', err);
+    ctxLog.error({ err: (err as Error)?.message ?? String(err) }, 'generateExplanation failed — continuing without AI');
   }
   const explanation = aiResult?.explanation ?? `Signal triggered on ${instrument} — ${setup.name}.`;
   const aiModel     = aiResult?.model ?? null;
@@ -318,12 +326,12 @@ async function handleSignalTriggered(raw: string): Promise<void> {
         try {
           await sendAttempt();
         } catch (err) {
-          console.warn('[dispatcher] Email failed (attempt 1), retrying in 5s:', err);
+          ctxLog.warn({ err: (err as Error)?.message ?? String(err) }, 'email attempt 1 failed — retrying in 5s');
           await new Promise(r => setTimeout(r, 5000));
           try {
             await sendAttempt();
           } catch (retryErr) {
-            console.error('[dispatcher] Email retry also failed:', retryErr);
+            ctxLog.error({ err: (retryErr as Error)?.message ?? String(retryErr) }, 'email retry also failed');
           }
         }
 
@@ -358,10 +366,10 @@ async function handleSignalTriggered(raw: string): Promise<void> {
         });
       }
 
-      console.log(`[dispatcher] Sent ${kind} notification for ${instrument}`);
+      ctxLog.info({ channel: kind }, 'notification sent');
     } catch (err) {
       // Per-channel failure must not crash the worker
-      console.error(`[dispatcher] ${kind} notification failed for user ${user_id}:`, err);
+      ctxLog.error({ channel: kind, err: (err as Error)?.message ?? String(err) }, 'notification failed');
     }
   }
 
@@ -371,13 +379,13 @@ async function handleSignalTriggered(raw: string): Promise<void> {
     data:  { notifiedAt: new Date() },
   });
 
-  console.log(`[dispatcher] Completed dispatch for event=${event.id}`);
+  ctxLog.info({ eventId: event.id }, 'dispatch complete');
 }
 
 // ─── Bootstrap ────────────────────────────────────────────────────────────────
 
 async function main() {
-  console.log('[dispatcher] Starting notification dispatcher...');
+  log.info('starting notification dispatcher');
 
   // C5 — pre-warm the prompt cache before traffic arrives. signal_explanation
   // is the dispatcher's only LLM feature; warming it covers free-tier (Haiku
@@ -385,34 +393,34 @@ async function main() {
   prewarmCache([
     { model: 'claude-haiku-4-5-20251001', feature: 'signal_explanation_haiku' },
     { model: 'claude-sonnet-4-6',         feature: 'signal_explanation' },
-  ]).catch(err => console.warn('[dispatcher] prewarm failed (non-fatal):', err?.message ?? err));
+  ]).catch(err => log.warn({ err: err?.message ?? String(err) }, 'prewarm failed (non-fatal)'));
 
   await subscriber.subscribe('signal:triggered', (err) => {
     if (err) {
-      console.error('[dispatcher] Failed to subscribe to signal:triggered:', err);
+      log.fatal({ err: err.message }, 'failed to subscribe to signal:triggered');
       process.exit(1);
     }
-    console.log('[dispatcher] Subscribed to signal:triggered');
+    log.info('subscribed to signal:triggered');
   });
 
   subscriber.on('message', (_channel: string, message: string) => {
     // Process each message independently — errors are logged but don't block the loop
     handleSignalTriggered(message).catch(err => {
-      console.error('[dispatcher] Unhandled error in handleSignalTriggered:', err);
+      log.error({ err: err?.message ?? String(err) }, 'unhandled error in handleSignalTriggered');
     });
   });
 
   subscriber.on('error', (err) => {
-    console.error('[dispatcher] Redis subscriber error:', err);
+    log.error({ err: err?.message ?? String(err) }, 'redis subscriber error');
   });
 
   redisClient.on('error', (err) => {
-    console.error('[dispatcher] Redis client error:', err);
+    log.error({ err: err?.message ?? String(err) }, 'redis client error');
   });
 
   // Graceful shutdown
   const shutdown = async (signal: string) => {
-    console.log(`[dispatcher] Received ${signal}, shutting down...`);
+    log.info({ signal }, 'shutting down');
     await subscriber.quit();
     await redisClient.quit();
     await db.$disconnect();
@@ -422,10 +430,10 @@ async function main() {
   process.on('SIGINT',  () => shutdown('SIGINT'));
   process.on('SIGTERM', () => shutdown('SIGTERM'));
 
-  console.log('[dispatcher] Ready. Waiting for signals...');
+  log.info('ready — waiting for signals');
 }
 
 main().catch(err => {
-  console.error('[dispatcher] Fatal startup error:', err);
+  log.fatal({ err: err?.message ?? String(err) }, 'fatal startup error');
   process.exit(1);
 });
