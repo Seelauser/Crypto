@@ -2,7 +2,9 @@
 
 import { useState, useMemo, useEffect, useRef, useCallback, type RefObject } from 'react';
 import Link from 'next/link';
-import CvdChart from '@/components/charts/CvdChart';
+import CvdChart, { type Timeframe } from '@/components/charts/CvdChart';
+import FootprintChart from '@/components/charts/FootprintChart';
+import DomLadder from '@/components/charts/DomLadder';
 import OrderBookHeatmap from '@/components/charts/OrderBookHeatmap';
 import TapePanel from '@/components/charts/TapePanel';
 import TapeNarrator from '@/components/charts/TapeNarrator';
@@ -326,6 +328,7 @@ export default function MarketView({ asset, tier }: Props) {
   const [searchQuery,        setSearchQuery]        = useState('');
   const [bottomPanel,        setBottomPanel]        = useState<BottomPanel>('placement');
   const [sidebarCollapsed,   setSidebarCollapsed]   = useState(false);
+  const [timeframe,          setTimeframe]          = useState<Timeframe>('5m');
 
   // Smart layer defaults by tier — Pro lands on the order-flow USP (footprint)
   // visible by default; starter gets volume profile. Computed once at mount
@@ -664,6 +667,10 @@ export default function MarketView({ asset, tier }: Props) {
               instrument={selectedInstrument}
               tier={tier}
               containerRef={chartPaneRef}
+              timeframe={timeframe}
+              onTimeframeChange={setTimeframe}
+              showVolumeProfile={layers.volume_profile}
+              primaryView={layers.footprint ? 'footprint' : layers.orderbook ? 'depth' : 'candles'}
               placementHistory={layers.placement ? placementHistory : []}
               onMarkerHover={layers.placement ? handleMarkerHover : undefined}
             />
@@ -796,12 +803,20 @@ function ChartPaneAutoHeight({
   instrument,
   tier,
   containerRef,
+  timeframe,
+  onTimeframeChange,
+  showVolumeProfile,
+  primaryView,
   placementHistory,
   onMarkerHover,
 }: {
   instrument: string;
   tier: 'free' | 'starter' | 'pro';
   containerRef: RefObject<HTMLDivElement | null>;
+  timeframe: Timeframe;
+  onTimeframeChange: (tf: Timeframe) => void;
+  showVolumeProfile: boolean;
+  primaryView: 'candles' | 'footprint' | 'depth';
   placementHistory?: PlacementSignal[];
   onMarkerHover?: (signal: PlacementSignal | null, x: number, y: number) => void;
 }) {
@@ -811,20 +826,34 @@ function ChartPaneAutoHeight({
     const el = containerRef.current;
     if (!el) return;
 
+    // Guard against sub-pixel ResizeObserver oscillation: only commit a new
+    // height when it differs meaningfully. Without this the observer can feed
+    // back into the chart's own resize and produce a visible redraw flicker.
+    const commit = (h: number) => {
+      const next = Math.floor(h);
+      setChartHeight(prev => (Math.abs(prev - next) > 2 ? next : prev));
+    };
+
     const ro = new ResizeObserver(entries => {
       for (const entry of entries) {
         const h = entry.contentRect.height;
-        if (h > 80) setChartHeight(Math.floor(h));
+        if (h > 80) commit(h);
       }
     });
     ro.observe(el);
 
-    // Initial measurement
-    const h = el.clientHeight;
-    if (h > 80) setChartHeight(Math.floor(h));
+    const h0 = el.clientHeight;
+    if (h0 > 80) commit(h0);
 
     return () => ro.disconnect();
   }, [containerRef]);
+
+  if (primaryView === 'footprint') {
+    return <FootprintChart instrument={instrument} tier={tier} height={chartHeight} />;
+  }
+  if (primaryView === 'depth') {
+    return <DomLadder instrument={instrument} tier={tier} height={chartHeight} />;
+  }
 
   return (
     <CvdChart
@@ -832,6 +861,9 @@ function ChartPaneAutoHeight({
       height={chartHeight}
       showRealTime={tier === 'pro'}
       tier={tier}
+      timeframe={timeframe}
+      onTimeframeChange={onTimeframeChange}
+      showVolumeProfile={showVolumeProfile}
       placementHistory={placementHistory}
       onMarkerHover={onMarkerHover}
     />

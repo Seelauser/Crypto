@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import type {
   IChartApi,
   ISeriesApi,
+  IPriceLine,
   CandlestickData,
   HistogramData,
   LineData,
@@ -16,17 +17,73 @@ import type { PlacementSignal } from '@/lib/chart/types';
 
 // ─── Props ────────────────────────────────────────────────────────────────────
 
+export const TIMEFRAMES = ['1m', '5m', '15m', '1h', '4h', '1d'] as const;
+export type Timeframe = (typeof TIMEFRAMES)[number];
+
+/** Bar width in seconds per timeframe — drives marker hover tolerance. */
+const TF_SECONDS: Record<string, number> = {
+  '1m': 60, '5m': 300, '15m': 900, '1h': 3600, '4h': 14400, '1d': 86400,
+};
+
 interface Props {
   instrument: string;
   height?: number;
   showRealTime?: boolean;
   tier?: 'free' | 'starter' | 'pro';
+  /** Chart timeframe. Drives the bars fetch + marker tolerance. */
+  timeframe?: Timeframe;
+  /** Fired when the user picks a timeframe from the in-chart selector. */
+  onTimeframeChange?: (tf: Timeframe) => void;
+  /** Draw POC / VAH / VAL volume-profile price lines on the candle series. */
+  showVolumeProfile?: boolean;
   /** Emitted placement signals to render as candlestick markers (P5-6).
    *  Caller controls the layer toggle; pass `[]` or omit to hide. */
   placementHistory?: PlacementSignal[];
   /** Fired when the user hovers a marker so a parent can render a tooltip
    *  with the chart-explain LLM call. */
   onMarkerHover?: (signal: PlacementSignal | null, x: number, y: number) => void;
+}
+
+// ─── Volume profile (POC / VAH / VAL) ─────────────────────────────────────────
+
+/**
+ * Bucket bar volume by price and return the Point of Control plus the 70%
+ * Value Area bounds. Approximation: each bar's volume is attributed to its
+ * close price bucket (sufficient for a visual reference band).
+ */
+function computeVolumeProfile(bars: OhlcvBar[]): { poc: number; vah: number; val: number } | null {
+  if (bars.length < 5) return null;
+  const prices = bars.map(b => b.close);
+  const lo = Math.min(...prices);
+  const hi = Math.max(...prices);
+  if (hi <= lo) return null;
+
+  const BUCKETS = 50;
+  const step = (hi - lo) / BUCKETS;
+  const vol = new Array<number>(BUCKETS).fill(0);
+  for (const b of bars) {
+    const idx = Math.min(BUCKETS - 1, Math.max(0, Math.floor((b.close - lo) / step)));
+    vol[idx] += b.volume ?? 0;
+  }
+
+  const total = vol.reduce((a, v) => a + v, 0);
+  if (total <= 0) return null;
+
+  let pocIdx = 0;
+  for (let i = 1; i < BUCKETS; i++) if (vol[i] > vol[pocIdx]) pocIdx = i;
+
+  // Expand outward from POC until 70% of volume is captured → value area.
+  let loIdx = pocIdx, hiIdx = pocIdx, acc = vol[pocIdx];
+  const target = total * 0.7;
+  while (acc < target && (loIdx > 0 || hiIdx < BUCKETS - 1)) {
+    const below = loIdx > 0 ? vol[loIdx - 1] : -1;
+    const above = hiIdx < BUCKETS - 1 ? vol[hiIdx + 1] : -1;
+    if (above >= below) { hiIdx++; acc += Math.max(0, above); }
+    else                { loIdx--; acc += Math.max(0, below); }
+  }
+
+  const priceAt = (i: number) => lo + (i + 0.5) * step;
+  return { poc: priceAt(pocIdx), vah: priceAt(hiIdx), val: priceAt(loIdx) };
 }
 
 // ─── Markers ──────────────────────────────────────────────────────────────────
@@ -104,6 +161,9 @@ export default function CvdChart({
   height = 480,
   showRealTime = false,
   tier = 'free',
+  timeframe = '5m',
+  onTimeframeChange,
+  showVolumeProfile = false,
   placementHistory,
   onMarkerHover,
 }: Props) {
@@ -112,6 +172,7 @@ export default function CvdChart({
   const candleSeriesRef  = useRef<ISeriesApi<'Candlestick'> | null>(null);
   const deltaSeriesRef   = useRef<ISeriesApi<'Histogram'> | null>(null);
   const cvdLineSeriesRef = useRef<ISeriesApi<'Line'> | null>(null);
+  const volProfileLinesRef = useRef<IPriceLine[]>([]);
   const resizeObserverRef = useRef<ResizeObserver | null>(null);
   const barsRef          = useRef<OhlcvBar[]>([]);
   // Current height, read by the mount-once effect without re-running it.
@@ -135,7 +196,7 @@ export default function CvdChart({
       setLoading(true);
       setError(null);
       try {
-        const res = await fetch(`/api/markets/${instrument}/bars?tf=5m&limit=200`);
+        const res = await fetch(`/api/markets/${instrument}/bars?tf=${timeframe}&limit=200`);
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const payload: { bars?: OhlcvBar[] } | OhlcvBar[] = await res.json();
         const bars: OhlcvBar[] = Array.isArray(payload) ? payload : (payload.bars ?? []);
@@ -153,7 +214,7 @@ export default function CvdChart({
     return () => {
       cancelled = true;
     };
-  }, [instrument]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [instrument, timeframe]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Apply real-time CVD stream updates ────────────────────────────────────
   useEffect(() => {
@@ -375,6 +436,39 @@ export default function CvdChart({
     series.setMarkers(markers);
   }, [placementHistory]);
 
+  // ── Volume-profile lines (POC / VAH / VAL) ────────────────────────────────
+  // Redraw whenever the toggle flips, the instrument/timeframe changes, or new
+  // bars land. Always clears prior lines first so toggling off truly removes.
+  useEffect(() => {
+    const series = candleSeriesRef.current;
+    if (!series) return;
+
+    for (const line of volProfileLinesRef.current) {
+      try { series.removePriceLine(line); } catch { /* series gone */ }
+    }
+    volProfileLinesRef.current = [];
+
+    if (!showVolumeProfile) return;
+    const vp = computeVolumeProfile(barsRef.current);
+    if (!vp) return;
+
+    const mk = (price: number, title: string, color: string, dashed: boolean) =>
+      series.createPriceLine({
+        price,
+        color,
+        lineWidth: 1,
+        lineStyle: dashed ? 2 : 0, // 2 = dashed, 0 = solid
+        axisLabelVisible: true,
+        title,
+      });
+
+    volProfileLinesRef.current = [
+      mk(vp.poc, 'POC', '#a855f7', false),
+      mk(vp.vah, 'VAH', '#a855f766', true),
+      mk(vp.val, 'VAL', '#a855f766', true),
+    ];
+  }, [showVolumeProfile, instrument, timeframe, loading]);
+
   // ── Crosshair → onMarkerHover ─────────────────────────────────────────────
   // lightweight-charts has no "hover this marker" event, so we approximate:
   // when the crosshair lands on a candle whose bar-time matches an emitted
@@ -386,8 +480,8 @@ export default function CvdChart({
     const handler = (param: any) => {
       if (!param?.time || !param.point) { onMarkerHover(null, 0, 0); return; }
       const tSec = Number(param.time);
-      // Tolerance = the 5m bar width in seconds (matches the bars route).
-      const TOL = 300;
+      // Tolerance = one bar width in seconds for the active timeframe.
+      const TOL = TF_SECONDS[timeframe] ?? 300;
       const hit = placementHistory.find(s => {
         const sSec = Math.floor(s.ts / 1000);
         return Math.abs(sSec - tSec) <= TOL;
@@ -421,7 +515,7 @@ export default function CvdChart({
           display: 'flex',
           gap: 6,
           alignItems: 'center',
-          pointerEvents: 'none',
+          pointerEvents: 'auto',
         }}
       >
         {/* Data quality badge */}
@@ -453,16 +547,33 @@ export default function CvdChart({
           {instrument}
         </span>
 
-        {/* Timeframe */}
-        <span
-          style={{
-            fontSize: 10,
-            fontFamily: 'JetBrains Mono, monospace',
-            color: '#5a5f6a',
-          }}
-        >
-          5m
-        </span>
+        {/* Timeframe selector */}
+        <div style={{ display: 'flex', gap: 2, alignItems: 'center' }}>
+          {TIMEFRAMES.map(tf => {
+            const active = tf === timeframe;
+            return (
+              <button
+                key={tf}
+                onClick={() => onTimeframeChange?.(tf)}
+                disabled={!onTimeframeChange}
+                title={`Switch to ${tf}`}
+                style={{
+                  fontSize: 10,
+                  fontFamily: 'JetBrains Mono, monospace',
+                  padding: '1px 6px',
+                  borderRadius: 3,
+                  border: `1px solid ${active ? '#22d3ee55' : 'transparent'}`,
+                  background: active ? '#22d3ee18' : 'transparent',
+                  color: active ? '#22d3ee' : '#5a5f6a',
+                  cursor: onTimeframeChange ? 'pointer' : 'default',
+                  letterSpacing: '0.02em',
+                }}
+              >
+                {tf}
+              </button>
+            );
+          })}
+        </div>
       </div>
 
       {/* ── Top-right: delay banner for free tier ─────────────────────────── */}
