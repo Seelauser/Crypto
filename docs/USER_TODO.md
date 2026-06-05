@@ -10,11 +10,11 @@ Edit `/root/projects/orderflow/.env` on the server, then restart the relevant sy
 
 These three give a real user a usable signup → notification flow. Without them, accounts work but you can't send a transactional email, the AI can't explain triggered signals, and no push notifications fire.
 
-### 1.1 `ANTHROPIC_API_KEY` — AI explanations on every triggered signal
-- **Get it:** https://console.anthropic.com → API Keys → "Create Key". Name it `orderflow-prod`.
-- **Cost:** Pay-per-token. With current Haiku/Sonnet routing + prompt caching, ~$0.01–$0.05 per active user per day.
-- **Without it:** Signals fire and persist, but the dispatcher uses a fixed-string explanation instead of real AI narration. Users see a generic "Signal triggered" instead of "Sweep + 3x bid imbalance suggest short-term reversal at 69,500…"
-- **After setting:** `systemctl restart orderflow-notification-dispatcher orderflow-web orderflow-api`
+### 1.1 `ANTHROPIC_API_KEY` — AI explanations on every triggered signal ✅ DONE (2026-06-05)
+
+Key installed and verified live. `pnpm verify:cache` passes 100% on all three
+tiers (Haiku 4.5 / Sonnet 4.6 / Opus 4.7). Boot-time pre-warm fires on
+`orderflow-notification-dispatcher` and `orderflow-daily-recap`.
 
 ### 1.2 `RESEND_API_KEY` + `EMAIL_FROM` — email verification + signal emails
 - **Get it:** https://resend.com → API Keys. Free tier = 3,000 emails/month.
@@ -112,7 +112,13 @@ Run this to see which keys are still blank in `.env`:
 grep -E '^[A-Z_]+=' /root/projects/orderflow/.env | awk -F= '$2=="" || $2=="\"\"" {print $1}'
 ```
 
-Current state (2026-06-02): everything in sections 1–4 above is empty.
+Current state (2026-06-05):
+- §1.1 ANTHROPIC_API_KEY — **set + verified ✅**
+- §1.2 RESEND_API_KEY — empty
+- §1.3 VAPID — empty
+- §2.1 Stripe — empty
+- §3 non-crypto data keys — all empty
+- §4 Telegram — empty
 
 ---
 
@@ -127,31 +133,17 @@ Once you've pasted the keys, ping me with which section(s) you set and I'll:
 
 ---
 
-## Engineering backlog — things Claude can do *without* credentials
+## Engineering backlog — what's left, credential-free
 
-These came out of the as-built review documented in [`ARCHITECTURE.md`](./ARCHITECTURE.md) §10–11. None need a key from you — just give me the go-ahead.
+E1–E6 (rate-limit, /api/auth/resend, CAGGs, OB retention, CVD persistence,
+scan-worker) and **C1–C5 (all prompt-cache work)** all shipped through
+sessions 22–25. The remaining items are quality / polish — see
+[`NEXT_SESSION.md`](./NEXT_SESSION.md) §3B for the current picklist:
 
-| # | Item | Effort | Why it matters |
-|---|---|---|---|
-| E1 | Deploy `orderflow-scan-worker.service` (the worker exists at `apps/orderflow-workers/src/ingest/scan_worker.py` but has no systemd unit; scan jobs queue forever today) | ~30 min | The "Scans" product surface goes from broken → working |
-| E2 | Move registration rate limit from in-memory Map → Redis | ~30 min | Trivially DoSable today; one restart wipes the limiter |
-| E3 | Build `/api/auth/resend` route + UI button for verification email | ~1 h | If your first email gets lost, users have no recourse today |
-| E4 | TimescaleDB continuous aggregates for `ohlcv_bars` (1m/5m/15m/1h) | ~3 h | Every `/bars` request currently re-runs `time_bucket` over raw ticks; caches make it ~10x faster |
-| E5 | Retention policy on `order_book_snapshots` (e.g. 14 days) | ~10 min | Currently unbounded; ~600k rows in 30 days — becomes a problem in 6–12 months |
-| E6 | Persist streaming CVD baselines every 60s | ~2 h | A `streaming.service` restart wipes running CVD totals |
-| E7 | Per-page mobile audit (/signals, /scans, /settings, /billing, /markets) | ~4 h | Only `/dashboard` got the mobile-first treatment in session 19 |
-| E8 | Migrate from `next lint` (deprecated) to ESLint flat config | ~1 h | Lint coverage is currently dropped in CI |
+- **P6-1** — pino + correlation IDs across workers (~3h)
+- **P6-3** — mobile audit /signals, /scans, /settings, /billing (~4h)
+- **P6-4** — ESLint flat-config migration (~1h)
+- **OrderFlowChart unified panes** (P5-6 from spec) — optional refactor (~4h)
+- **rescue/llm-extraction-wip** — reconcile or close the branch (~1h)
 
-### Prompt caching — cost reduction (silent no-op today)
-
-Anthropic prompt caching is wired up (`cache_control: { type: 'ephemeral' }` is set correctly) but the system prompt is below the minimum cacheable prefix (~350 tokens vs 2048 / 4096 required). Every API call is paying full price. Fixing this cuts ~⅔–¾ of input cost on AI features.
-
-| # | Item | Effort | Why it matters |
-|---|---|---|---|
-| C1 | Pad `packages/llm-prompts/src/system.ts` past 4096 tokens with stable reference material | ~1 h | Unlocks caching across Haiku/Sonnet/Opus. Biggest single cost win. |
-| C2 | Route 3 bypassed callers (notification-dispatcher, daily-recap, signals/explain) through `callLlm()` | ~1 h | Restores token-ledger debit + audit logging + tier fallback (today they bypass these) |
-| C3 | Cache-hit-rate KPI in `/admin` from `llm_calls.cache_read_input_tokens` | ~1 h | Without it, future regressions are invisible |
-| C4 | Sonnet-only: per-feature prompt into a second cached system block (lower 2048-token bar) | ~1 h | Sonnet features cache without padding the global prompt |
-| C5 | `max_tokens: 0` pre-warm on long-lived worker boot | ~30 min | Eliminates first-call latency post-restart. After C1 lands. |
-
-Tell me **`work E1`** or **`work C1`** (or whichever number) and I'll pick it up.
+Tell me **`work P6-1`** (or any of the above) and I'll pick it up.
