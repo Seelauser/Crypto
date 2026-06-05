@@ -48,7 +48,7 @@ export async function PATCH(
   }
 
   const userId = session.user.id;
-  const tier   = ((session.user as any).tier ?? 'free') as UserTier;
+  const tier   = (session.user.tier ?? 'free') as UserTier;
   const limits = getLimits(tier);
   const { id } = await params;
 

@@ -45,7 +45,7 @@ export async function POST(
   }
 
   const userId = session.user.id;
-  const tier   = ((session.user as any).tier ?? 'free') as UserTier;
+  const tier   = (session.user.tier ?? 'free') as UserTier;
 
   // Parse body
   const body = await req.json().catch(() => null);

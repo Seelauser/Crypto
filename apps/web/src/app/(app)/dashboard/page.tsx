@@ -30,7 +30,7 @@ type SignalEventRow = {
   setup: { name: string; market: string } | null;
 };
 
-type WatchlistRow = {
+type _WatchlistRow = {
   id: string;
   name: string;
   instruments: string[];

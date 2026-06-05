@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { RefreshCw, Loader2, Mic } from 'lucide-react';
 import type { UserTier } from '@orderflow/types';
 
@@ -10,7 +10,7 @@ interface Props {
   recentPrints?: Array<{ size: number; price: number; side: string; ts: number }>;
 }
 
-const MOCK_PRINTS = (instrument: string) => [
+const MOCK_PRINTS = (_instrument: string) => [
   { side: 'buy', size: 15.4, price: 50200, ts: Date.now() - 5000 },
   { side: 'buy', size: 8.2, price: 50190, ts: Date.now() - 12000 },
   { side: 'sell', size: 22.1, price: 50150, ts: Date.now() - 18000 },
@@ -18,7 +18,6 @@ const MOCK_PRINTS = (instrument: string) => [
 ];
 
 export default function TapeNarrator({ instrument, tier, recentPrints }: Props) {
-  const [narration, setNarration] = useState('');
   const [model, setModel] = useState('');
   const [costCents, setCostCents] = useState(0);
   const [loading, setLoading] = useState(false);
@@ -40,7 +39,7 @@ export default function TapeNarrator({ instrument, tier, recentPrints }: Props) 
     step();
   }
 
-  async function fetchNarration() {
+  const fetchNarration = useCallback(async () => {
     setLoading(true);
     setError('');
     try {
@@ -56,7 +55,6 @@ export default function TapeNarrator({ instrument, tier, recentPrints }: Props) 
         else setError(data.error ?? 'Narration failed.');
         return;
       }
-      setNarration(data.narration);
       setModel(data.model);
       setCostCents(data.costCents);
       typewrite(data.narration);
@@ -65,14 +63,14 @@ export default function TapeNarrator({ instrument, tier, recentPrints }: Props) 
     } finally {
       setLoading(false);
     }
-  }
+  }, [instrument, recentPrints]);
 
   // Auto-refresh for premium every 60s
   useEffect(() => {
     if (tier !== 'pro') return;
     intervalRef.current = setInterval(fetchNarration, 60_000);
     return () => { if (intervalRef.current) clearInterval(intervalRef.current); };
-  }, [instrument, tier]);
+  }, [instrument, tier, fetchNarration]);
 
   return (
     <div style={{

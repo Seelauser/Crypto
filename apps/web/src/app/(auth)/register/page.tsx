@@ -1,7 +1,6 @@
 'use client';
 
 import { useState, useCallback, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { Loader2, Check, X, Eye, EyeOff, AlertCircle } from 'lucide-react';
 
@@ -29,7 +28,6 @@ function getPasswordStrength(pw: string): { score: number; label: string; color:
 }
 
 export default function RegisterPage() {
-  const router = useRouter();
   const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');

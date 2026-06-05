@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import redis from '@/lib/redis';
-import { ASSET_CLASSES, REGIME_META } from '@/lib/regimes';
+import { ASSET_CLASSES } from '@/lib/regimes';
 import type { MarketRegime } from '@orderflow/types';
 
 type RegimeDatum = {

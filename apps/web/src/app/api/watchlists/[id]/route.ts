@@ -9,7 +9,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   if (!session?.user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   const { id } = await params;
-  const tier = ((session.user as any).tier ?? 'free') as UserTier;
+  const tier = (session.user.tier ?? 'free') as UserTier;
   const limits = getLimits(tier);
 
   const watchlist = await db.watchlist.findFirst({ where: { id, userId: session.user.id } });

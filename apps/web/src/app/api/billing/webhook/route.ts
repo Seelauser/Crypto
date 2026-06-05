@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { stripe, MONTHLY_TOKEN_CREDIT_CENTS } from '@/lib/stripe';
 import { db } from '@/lib/db';
+import { Prisma } from '@prisma/client';
 import Stripe from 'stripe';
 
 export const config = { api: { bodyParser: false } };
@@ -34,7 +35,7 @@ export async function POST(req: NextRequest) {
       // carry no `tier` metadata → default to 'pro' (the old single product).
       const tier: 'starter' | 'pro' = session.metadata?.tier === 'starter' ? 'starter' : 'pro';
 
-      const ops: any[] = [
+      const ops: Prisma.PrismaPromise<unknown>[] = [
         db.user.update({
           where: { id: userId },
           data: { tier },

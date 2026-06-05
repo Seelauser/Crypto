@@ -123,7 +123,8 @@ export function usePlacementSignal(instrument: string, enabled = true): Placemen
       try {
         const res = await fetch('/api/market/divergences');
         if (!res.ok) return;
-        const { divergences } = await res.json() as { divergences: Array<Record<string, any>> };
+        type DivergenceEntry = { instrument: string; kind: 'bullish' | 'bearish'; divergence_strength?: number };
+        const { divergences } = await res.json() as { divergences: DivergenceEntry[] };
         const d = divergences.find(x => instrumentMatches(x.instrument, instrument));
         roll.current.divergence = d ? { kind: d.kind, strength: d.divergence_strength } : null;
         recompute();
@@ -159,7 +160,8 @@ export function usePlacementSignal(instrument: string, enabled = true): Placemen
       ws.onclose = () => { setState(s => ({ ...s, connected: false })); if (!closed) setTimeout(connect, 3_000); };
       ws.onerror = () => ws?.close();
       ws.onmessage = (ev) => {
-        let m: { type?: string; data?: Record<string, any> };
+        type WsData = { instrument?: string; cvd?: number; delta_60s?: number; imbalance_ratio?: number; side?: string; notional_usd?: number; ts?: number };
+        let m: { type?: string; data?: WsData };
         try { m = JSON.parse(ev.data); } catch { return; }
         const d = m.data;
         if (!d || !instrumentMatches(d.instrument, instrument)) return;

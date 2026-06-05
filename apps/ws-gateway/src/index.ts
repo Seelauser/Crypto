@@ -111,10 +111,10 @@ function removeClient(ws: WebSocket) {
   clientSubscriptions.delete(ws);
 }
 
-wss.on('connection', (ws: WebSocket, req: IncomingMessage) => {
+wss.on('connection', (ws: WebSocket, _req: IncomingMessage) => {
   // Ping/pong to detect dead connections
-  (ws as any).isAlive = true;
-  ws.on('pong', () => { (ws as any).isAlive = true; });
+  (ws as WebSocket & { isAlive: boolean }).isAlive = true;
+  ws.on('pong', () => { (ws as WebSocket & { isAlive: boolean }).isAlive = true; });
 
   ws.on('message', (raw) => {
     let msg: { type: string; channels?: string[]; userId?: string };
@@ -143,8 +143,8 @@ wss.on('connection', (ws: WebSocket, req: IncomingMessage) => {
 // Heartbeat — remove stale connections every 30s
 const heartbeat = setInterval(() => {
   wss.clients.forEach((ws) => {
-    if (!(ws as any).isAlive) { ws.terminate(); return; }
-    (ws as any).isAlive = false;
+    if (!(ws as WebSocket & { isAlive: boolean }).isAlive) { ws.terminate(); return; }
+    (ws as WebSocket & { isAlive: boolean }).isAlive = false;
     ws.ping();
   });
 }, 30_000);

@@ -7,7 +7,7 @@ import type { UserTier } from '@orderflow/types';
 // auth + Starter/Pro layer check the chart-data routes were each inlining.
 
 export function sessionTier(session: Session | null): UserTier {
-  return ((session?.user as any)?.tier ?? 'free') as UserTier;
+  return (session?.user?.tier ?? 'free') as UserTier;
 }
 
 /**

@@ -23,7 +23,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
   const userId = session.user.id;
-  const tier   = ((session.user as any).tier ?? 'free') as UserTier;
+  const tier   = (session.user.tier ?? 'free') as UserTier;
 
   const instrument = req.nextUrl.searchParams.get('instrument');
   if (!instrument) {
@@ -42,7 +42,7 @@ export async function GET(req: NextRequest) {
       select:  { createdAt: true, snapshot: true },
     });
     for (const e of events) {
-      const snap = (e.snapshot ?? {}) as Record<string, any>;
+      const snap = (e.snapshot ?? {}) as Record<string, unknown>;
       markers.push({
         ts:    e.createdAt.getTime(),
         kind:  'signal',
@@ -58,7 +58,7 @@ export async function GET(req: NextRequest) {
     try {
       const raw = await redis.lrange('market:divergences', 0, 49);
       for (const entry of raw) {
-        let d: Record<string, any>;
+        let d: Record<string, unknown>;
         try { d = JSON.parse(entry); } catch { continue; }
         if (d.instrument !== instrument) continue;
         markers.push({

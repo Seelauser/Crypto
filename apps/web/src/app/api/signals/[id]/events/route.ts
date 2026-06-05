@@ -12,7 +12,7 @@ export async function GET(
   if (!session?.user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   const { id } = await params;
-  const tier = ((session.user as any).tier ?? 'free') as UserTier;
+  const tier = (session.user.tier ?? 'free') as UserTier;
   const limits = getLimits(tier);
 
   const setup = await db.signalSetup.findFirst({

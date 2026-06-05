@@ -12,7 +12,7 @@ import type {
   Time,
 } from 'lightweight-charts';
 import { useCvdStream } from '@/lib/ws';
-import type { OhlcvBar, CvdPoint } from '@orderflow/types';
+import type { OhlcvBar } from '@orderflow/types';
 import type { PlacementSignal } from '@/lib/chart/types';
 
 // ─── Props ────────────────────────────────────────────────────────────────────
@@ -183,7 +183,6 @@ export default function CvdChart({
 
   // Only subscribe to real-time CVD when premium and showRealTime
   const isRealTime = showRealTime && tier === 'pro';
-  const isCrypto   = isCryptoInstrument(instrument);
 
   // Pass '__disabled__' so useCvdStream skips subscription when not needed
   const cvdStream = useCvdStream(isRealTime ? instrument : '__disabled__');
@@ -203,8 +202,8 @@ export default function CvdChart({
         if (cancelled) return;
         barsRef.current = bars;
         populateChart(bars);
-      } catch (e: any) {
-        if (!cancelled) setError(e?.message ?? 'Failed to load bars');
+      } catch (e: unknown) {
+        if (!cancelled) setError(e instanceof Error ? e.message : 'Failed to load bars');
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -477,7 +476,7 @@ export default function CvdChart({
     const chart = chartRef.current;
     if (!chart || !onMarkerHover || !placementHistory?.length) return;
 
-    const handler = (param: any) => {
+    const handler = (param: { time?: unknown; point?: { x: number; y: number } }) => {
       if (!param?.time || !param.point) { onMarkerHover(null, 0, 0); return; }
       const tSec = Number(param.time);
       // Tolerance = one bar width in seconds for the active timeframe.

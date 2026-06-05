@@ -3,7 +3,7 @@
 // Long-lived workers (notification-dispatcher, daily-recap) lose the
 // prompt-cache between deploys: the first call after each restart pays full
 // price for the global system prompt + the per-feature block. Pre-warming on
-// boot fires a tiny `max_tokens: 1` call that writes the cache so the very
+// boot fires a `max_tokens: 0` call that writes the cache so the very
 // next real call already reads from it.
 //
 // Cost: one cache-write for the model(s) we pre-warm. With the global system
@@ -44,9 +44,9 @@ export async function prewarmCache(targets: PrewarmTarget[]): Promise<void> {
       ];
       const res = await anthropic.messages.create({
         model,
-        max_tokens: 1,
+        max_tokens: 0,
         system:     systemBlocks,
-        messages: [{ role: 'user', content: 'ok' }],
+        messages: [{ role: 'user', content: 'warmup' }],
       });
       return { model, feature, usage: res.usage };
     }),

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useCallback, useState } from 'react';
+import { useEffect, useCallback, useState } from 'react';
 import { useSession } from 'next-auth/react';
 import type { WsMessage, Tick, CvdPoint, SignalSnapshot } from '@orderflow/types';
 
@@ -101,7 +101,7 @@ function handleMessage(raw: MessageEvent<string>) {
   if (msg.type === 'market_cvd_update' || msg.type === 'cvd_update') {
     const point = msg.data as CvdPoint & { instrument?: string };
     if (point) {
-      emitCvd((point as any).instrument ?? 'unknown', point);
+      emitCvd(point.instrument ?? 'unknown', point);
     }
     return;
   }
@@ -202,7 +202,7 @@ export function useMarketSocket(
   channels: string[],
 ): MarketSocketReturn {
   const { data: session } = useSession();
-  const userId = (session?.user as any)?.id as string | undefined;
+  const userId = session?.user?.id as string | undefined;
 
   const [, forceUpdate] = useState(0);
 
@@ -331,7 +331,7 @@ export function useSignalStream(userId: string): SignalSnapshot | null {
 
     const listener: SignalListener = (s) => {
       // Accept snapshot if it targets this user or has no userId restriction
-      if ((s as any).userId === userId || !('userId' in s)) {
+      if ((s as unknown as Record<string, unknown>).userId === userId || !('userId' in s)) {
         setSnapshot(s);
       }
     };

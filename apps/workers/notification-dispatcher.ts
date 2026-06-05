@@ -11,7 +11,7 @@
 
 import Redis from 'ioredis';
 import webpush from 'web-push';
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient, Prisma } from '@prisma/client';
 import { Resend } from 'resend';
 import type { Logger } from 'pino';
 import { callLlm, prewarmCache, type LlmModel } from '@orderflow/llm';
@@ -285,7 +285,7 @@ async function handleSignalTriggered(raw: string): Promise<void> {
       setupId:       setup_id,
       userId:        user_id,
       instrument,
-      snapshot:      snapshot as any,
+      snapshot:      snapshot as unknown as Prisma.InputJsonObject,
       aiExplanation: explanation,
       aiModel,
       aiCostCents,

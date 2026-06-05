@@ -51,7 +51,7 @@ export default async function MarketsAssetPage({
   const session = await auth();
   if (!session?.user) redirect('/login');
 
-  const tier = normalizeTier((session.user as any).tier);
+  const tier = normalizeTier(session.user.tier);
 
   return <MarketView asset={asset} tier={tier} />;
 }

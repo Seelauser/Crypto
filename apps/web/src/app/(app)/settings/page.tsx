@@ -7,7 +7,7 @@ import { useSession } from 'next-auth/react';
 
 export default function SettingsPage() {
   const { data: session } = useSession();
-  const tier = (session?.user as any)?.tier ?? 'free';
+  const tier = session?.user?.tier ?? 'free';
 
   const [telegramLink, setTelegramLink] = useState('');
   const [loadingTelegram, setLoadingTelegram] = useState(false);
@@ -124,7 +124,7 @@ export default function SettingsPage() {
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               <div style={{ fontSize: 12, color: '#8a8f9b' }}>
-                We'll POST a HMAC-signed JSON payload to your endpoint on every signal trigger.
+                We&apos;ll POST a HMAC-signed JSON payload to your endpoint on every signal trigger.
               </div>
               <input
                 style={{ background: '#0a0a0b', border: '1px solid #1f2128', borderRadius: 6, color: '#e6e8ee', padding: '12px 14px', minHeight: 44, fontSize: 14, outline: 'none' }}

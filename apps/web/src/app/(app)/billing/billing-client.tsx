@@ -87,7 +87,7 @@ export default function BillingClient({ tier, balanceCents, subscription, recent
       } else {
         setCouponStatus({ type: 'error', message: data.error || 'Failed to apply coupon' });
       }
-    } catch (err) {
+    } catch (_err) {
       setCouponStatus({ type: 'error', message: 'Network error. Please try again.' });
     } finally {
       setCouponLoading(false);

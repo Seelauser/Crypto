@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Plus, Zap, Clock, CheckCircle, Pause, Trash2, ChevronRight } from 'lucide-react';
+import { Plus, ChevronRight } from 'lucide-react';
 import { LIMITS } from '@/lib/limits';
 import type { UserTier } from '@orderflow/types';
 import SignalWizard from '@/components/signals/SignalWizard';
@@ -13,7 +13,7 @@ interface SignalSetup {
   market: string;
   status: string;
   instruments: string[];
-  triggerConfig: any;
+  triggerConfig: Record<string, unknown>;
   notificationChannels: string[];
   createdAt: string;
 }
@@ -25,7 +25,7 @@ interface SignalEvent {
   aiModel: string | null;
   createdAt: string;
   setup: { name: string; market: string } | null;
-  snapshot: any;
+  snapshot: Record<string, unknown>;
 }
 
 interface Props {

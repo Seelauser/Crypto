@@ -3,7 +3,6 @@ import Redis from 'ioredis';
 // Module-level singleton with hot-reload safety (Next.js dev server re-imports modules).
 // Follows the same pattern as apps/web/src/lib/db.ts for Prisma.
 declare global {
-  // eslint-disable-next-line no-var
   var __redis: Redis | undefined;
 }
 

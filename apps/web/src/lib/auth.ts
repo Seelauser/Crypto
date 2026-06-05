@@ -78,8 +78,8 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         token.tier              = user.tier;
         token.tokenBalanceCents = user.tokenBalanceCents;
       }
-      if (trigger === 'update' && (session as any)?.tier) {
-        token.tier = (session as any).tier;
+      if (trigger === 'update' && (session as Record<string, unknown>)?.tier) {
+        token.tier = (session as Record<string, unknown>).tier as 'free' | 'starter' | 'pro';
       }
       return token;
     },

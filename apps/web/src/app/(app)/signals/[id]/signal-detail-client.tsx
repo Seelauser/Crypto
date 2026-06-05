@@ -23,7 +23,7 @@ interface SignalEvent {
   id: string;
   setupId: string;
   instrument: string;
-  snapshot: any;
+  snapshot: Record<string, unknown>;
   aiExplanation: string | null;
   aiModel: string | null;
   aiCostCents: number | null;
@@ -131,7 +131,7 @@ export default function SignalDetailClient({ setup: initial, events: initialEven
 
       {initialEvents.length === 0 ? (
         <div style={{ background: '#13141a', border: '1px solid #1f2128', borderRadius: 8, padding: 48, textAlign: 'center', color: '#5a5f6a', fontSize: 14 }}>
-          No events yet. This signal hasn't triggered.
+          No events yet. This signal hasn&apos;t triggered.
         </div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>

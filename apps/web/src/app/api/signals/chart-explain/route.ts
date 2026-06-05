@@ -41,7 +41,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
   const userId = session.user.id;
-  const tier   = ((session.user as any).tier ?? 'free') as UserTier;
+  const tier   = (session.user.tier ?? 'free') as UserTier;
 
   // Placement markers + their explanations are a Starter+ feature.
   if (tier === 'free') {

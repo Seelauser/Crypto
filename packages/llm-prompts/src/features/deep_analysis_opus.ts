@@ -50,7 +50,7 @@ function sign(n: number): string {
 // In production this would bucket by tick rounded to a price grid; here we
 // approximate using bar indices since we work with OHLCV rather than tick data.
 
-function approximateVpoc(bars: DeepAnalysisInput['bars']): {
+function _approximateVpoc(bars: DeepAnalysisInput['bars']): {
   price: number;
   volume: number;
 } {

@@ -15,7 +15,7 @@ export async function POST(req: NextRequest) {
   const session = await auth();
   if (!session?.user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-  const tier = ((session.user as any).tier ?? 'free') as UserTier;
+  const tier = (session.user.tier ?? 'free') as UserTier;
   const limits = getLimits(tier);
 
   const count = await db.watchlist.count({ where: { userId: session.user.id } });

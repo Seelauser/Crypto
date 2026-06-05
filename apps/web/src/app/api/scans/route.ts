@@ -22,7 +22,7 @@ export async function POST(req: NextRequest) {
   const session = await auth();
   if (!session?.user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-  const tier = ((session.user as any).tier ?? 'free') as UserTier;
+  const tier = (session.user.tier ?? 'free') as UserTier;
   const limits = getLimits(tier);
 
   const body = await req.json().catch(() => null);
@@ -54,7 +54,9 @@ export async function POST(req: NextRequest) {
   return NextResponse.json({ scanId: scan.id, results: mockResults, status: 'complete' }, { status: 201 });
 }
 
-function generateMockResults(market: string, scope: string, conditions: any) {
+type ScanConditions = z.infer<typeof scanSchema>['conditions'];
+
+function generateMockResults(market: string, scope: string, conditions: ScanConditions) {
   const cryptoSymbols = ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'BNBUSDT', 'XRPUSDT'];
   const stockSymbols = ['AAPL', 'NVDA', 'TSLA', 'MSFT', 'AMZN'];
   const symbols = market === 'crypto' ? cryptoSymbols : stockSymbols;
@@ -70,7 +72,7 @@ function generateMockResults(market: string, scope: string, conditions: any) {
     priceChange24h: (Math.random() - 0.5) * 10,
     volume24h: Math.random() * 1e9,
     dataQuality: market === 'crypto' ? 'true_l2' : 'inferred',
-    matchedConditions: conditions.filters.map((f: any) => `${f.field} ${f.op} ${f.value}`),
+    matchedConditions: conditions.filters.map(f => `${f.field} ${f.op} ${f.value}`),
   }));
 }
 
@@ -78,7 +80,7 @@ export async function GET() {
   const session = await auth();
   if (!session?.user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-  const tier = ((session.user as any).tier ?? 'free') as UserTier;
+  const tier = (session.user.tier ?? 'free') as UserTier;
   const limits = getLimits(tier);
   const since = limits.history_days === Infinity
     ? undefined

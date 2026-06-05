@@ -48,7 +48,7 @@ const COLORS = {
 function generateMockBars(basePrice: number, count = 12): FootprintBar[] {
   const bars: FootprintBar[] = [];
   let price = basePrice;
-  let cvd = 0;
+  let _cvd = 0;
   const now = Date.now();
 
   for (let i = 0; i < count; i++) {
@@ -79,7 +79,7 @@ function generateMockBars(basePrice: number, count = 12): FootprintBar[] {
       delta += bidVol - askVol;
     }
 
-    cvd += delta;
+    _cvd += delta;
     bars.push({ ts: now - (count - i) * 300_000, open, close, cells, delta, totalVol });
     price = close;
   }

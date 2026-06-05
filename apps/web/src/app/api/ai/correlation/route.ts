@@ -153,7 +153,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
   const userId = session.user.id;
-  const tier   = ((session.user as any).tier ?? 'free') as UserTier;
+  const tier   = (session.user.tier ?? 'free') as UserTier;
 
   // ── Parse body ────────────────────────────────────────────────────────────
   const raw = await req.json().catch(() => null);

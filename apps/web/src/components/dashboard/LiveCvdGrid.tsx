@@ -1,6 +1,5 @@
 'use client';
 
-import { useState } from 'react';
 import { TrendingUp, TrendingDown, Minus } from 'lucide-react';
 import { useCvdStream } from '@/lib/ws';
 import TermTip from '@/components/ui/TermTip';

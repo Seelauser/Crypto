@@ -2,7 +2,7 @@
 
 import { create } from 'zustand';
 import { persist, subscribeWithSelector } from 'zustand/middleware';
-import type { AssetClass, WsMessageType } from '@orderflow/types';
+import type { AssetClass } from '@orderflow/types';
 
 // ─── UI preferences ───────────────────────────────────────────────────────────
 

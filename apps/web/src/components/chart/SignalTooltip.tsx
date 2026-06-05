@@ -86,8 +86,8 @@ export default function SignalTooltip({ signal, position, instrument, tier }: Pr
         } else {
           setExplain({ loading: false, text: null, ai: false, error: data.message ?? data.error ?? 'Unable to load.' });
         }
-      } catch (e: any) {
-        if (e?.name === 'AbortError') return;
+      } catch (e: unknown) {
+        if (e instanceof Error && e.name === 'AbortError') return;
         setExplain({ loading: false, text: null, ai: false, error: 'Connection failed.' });
       }
     }, 250);

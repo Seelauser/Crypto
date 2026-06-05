@@ -80,7 +80,7 @@ export default function CorrelationPanel({
   defaultInstrumentA,
   defaultInstrumentB,
   availableInstruments,
-  tier,
+  tier: _tier,
 }: Props) {
   const [instrumentA, setInstrumentA] = useState(defaultInstrumentA);
   const [instrumentB, setInstrumentB] = useState(

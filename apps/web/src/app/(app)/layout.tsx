@@ -10,8 +10,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const user = {
     username: session.user.name ?? '',
     email: session.user.email ?? '',
-    tier: (session.user as any).tier ?? 'free',
-    tokenBalanceCents: (session.user as any).tokenBalanceCents ?? 0,
+    tier: session.user.tier ?? 'free',
+    tokenBalanceCents: session.user.tokenBalanceCents ?? 0,
     isAdmin: isAdminSession(session),
   };
 

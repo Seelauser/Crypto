@@ -29,7 +29,7 @@ export default async function SignalsPage() {
     <SignalsClient
       setups={JSON.parse(JSON.stringify(setups))}
       recentEvents={JSON.parse(JSON.stringify(recentEvents))}
-      tier={(session.user as any).tier ?? 'free'}
+      tier={session.user.tier ?? 'free'}
     />
   );
 }

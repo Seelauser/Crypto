@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { UserTier } from '@orderflow/types';
 import TierGateModal from '@/components/ui/TierGateModal';
 import { useMarketSocket } from '@/lib/ws';
@@ -32,15 +32,15 @@ function generateMockDom(mid: number, levels = 20): DomLevel[] {
   return result;
 }
 
+const BASE_PRICES: Record<string, number> = {
+  BTCUSDT: 50000, ETHUSDT: 3000, SOLUSDT: 150,
+  AAPL: 180, NVDA: 500, ES: 5200, GC: 2000, EURUSD: 1.082,
+};
+
 export default function DomLadder({ instrument, tier, height = 400 }: Props) {
   const [showGate, setShowGate] = useState(false);
   const [dom, setDom] = useState<DomLevel[]>([]);
   const [mid, setMid] = useState(50000);
-
-  const BASE_PRICES: Record<string, number> = {
-    BTCUSDT: 50000, ETHUSDT: 3000, SOLUSDT: 150,
-    AAPL: 180, NVDA: 500, ES: 5200, GC: 2000, EURUSD: 1.082,
-  };
 
   const { lastMessage } = useMarketSocket([instrument], ['market:orderbook']);
 
@@ -60,13 +60,13 @@ export default function DomLadder({ instrument, tier, height = 400 }: Props) {
     };
     if (data.instrument !== instrument || !data.bids || !data.asks) return;
 
-    const newMid = data.bids[0]?.[0] ?? mid;
-    const levels: DomLevel[] = [
-      ...data.asks.slice(0, 20).map(([price, size]) => ({ price, bidSize: 0, askSize: size, isBid: false })).reverse(),
-      ...data.bids.slice(0, 20).map(([price, size]) => ({ price, bidSize: size, askSize: 0, isBid: true })),
-    ];
-    setMid(newMid);
-    setDom(levels);
+    const bids = data.bids;
+    const asks = data.asks;
+    setMid(m => bids[0]?.[0] ?? m);
+    setDom([
+      ...asks.slice(0, 20).map(([price, size]) => ({ price, bidSize: 0, askSize: size, isBid: false })).reverse(),
+      ...bids.slice(0, 20).map(([price, size]) => ({ price, bidSize: size, askSize: 0, isBid: true })),
+    ]);
   }, [lastMessage, instrument]);
 
   // Simulate mild drift when no live WS data arrives (offline / dev mode)
