@@ -330,15 +330,14 @@ export default function MarketView({ asset, tier }: Props) {
   const [sidebarCollapsed,   setSidebarCollapsed]   = useState(false);
   const [timeframe,          setTimeframe]          = useState<Timeframe>('5m');
 
-  // Smart layer defaults by tier — Pro lands on the order-flow USP (footprint)
-  // visible by default; starter gets volume profile. Computed once at mount
-  // (tier is stable for the session) via a lazy initializer.
+  // Smart layer defaults by tier — all tiers land on candles + Vol Profile so
+  // the timeframe selector and CVD chart are always visible on first load.
+  // Footprint and Depth are opt-in via the toolbar (Pro-gated in ChartToolbar).
+  // NOTE: Previously Pro defaulted footprint=true which routed to FootprintChart,
+  // hiding the CvdChart and its timeframe selector entirely — confirmed broken live.
   const [layers, setLayers] = useState<ChartLayerState>(() => {
     const base = { ...DEFAULT_LAYERS };
-    if (tier === 'pro') {
-      base.footprint = true;
-      base.volume_profile = true;
-    } else if (tier === 'starter') {
+    if (tier === 'pro' || tier === 'starter') {
       base.volume_profile = true;
     }
     return base;
