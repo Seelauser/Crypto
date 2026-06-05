@@ -9,7 +9,7 @@ import {
 
 export default async function HomePage() {
   const session = await auth();
-  if (session?.user) redirect('/dashboard');
+  if (session?.user) redirect('/markets/crypto');
 
   return (
     <main className="lp-root">

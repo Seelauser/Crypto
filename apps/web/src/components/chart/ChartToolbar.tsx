@@ -47,17 +47,19 @@ interface LayerSpec {
 }
 
 const LAYERS: LayerSpec[] = [
-  { key: 'placement',      label: 'Placement',    tier: 'starter', hint: 'Long/short markers with confidence' },
-  { key: 'footprint',      label: 'Footprint',    tier: 'pro',     hint: 'Per-bar bid/ask volume by price' },
-  { key: 'orderbook',      label: 'Depth',        tier: 'pro',     hint: 'L2 book heatmap overlay' },
-  { key: 'volume_profile', label: 'Vol Profile',  tier: 'starter', hint: 'POC / VAH / VAL bands' },
-  { key: 'derivatives',    label: 'Derivs',       tier: 'starter', hint: 'Funding + OI rails' },
+  { key: 'placement',      label: 'Placement',    tier: 'starter', hint: 'AI-detected long/short order placements' },
+  { key: 'footprint',      label: 'Footprint',    tier: 'pro',     hint: 'Order flow: bid/ask volume per price level' },
+  { key: 'orderbook',      label: 'Depth',        tier: 'pro',     hint: 'L2 order book depth heatmap' },
+  { key: 'volume_profile', label: 'Vol Profile',  tier: 'starter', hint: 'Volume concentration: POC, VAH, VAL' },
+  { key: 'derivatives',    label: 'Derivs',       tier: 'starter', hint: 'Funding rates + open interest' },
 ];
 
 interface Props {
   tier:    UserTier;
   layers:  ChartLayerState;
   onChange: (next: ChartLayerState) => void;
+  sidebarCollapsed?: boolean;
+  onSidebarToggle?: (collapsed: boolean) => void;
 }
 
 function tierRank(t: UserTier): number {
@@ -75,8 +77,9 @@ function requiredRank(t: 'free' | 'starter' | 'pro'): number {
  * Server-side enforcement still belongs in each API route — this only drives
  * the client-side render state.
  */
-export default function ChartToolbar({ tier, layers, onChange }: Props) {
+export default function ChartToolbar({ tier, layers, onChange, sidebarCollapsed, onSidebarToggle }: Props) {
   const [popover, setPopover] = useState<ChartLayerKey | null>(null);
+  const [showLegend, setShowLegend] = useState(false);
   const userRank = tierRank(tier);
 
   const toggle = (k: ChartLayerKey) => {
@@ -86,6 +89,7 @@ export default function ChartToolbar({ tier, layers, onChange }: Props) {
   return (
     <div
       style={{
+        position: 'relative',
         display: 'flex',
         flexWrap: 'wrap',
         alignItems: 'center',
@@ -167,6 +171,88 @@ export default function ChartToolbar({ tier, layers, onChange }: Props) {
         <span style={{ fontSize: 10, color: C.dim, ...mono, marginLeft: 4 }}>
           — {LAYERS.find(L => L.key === popover)?.hint}
         </span>
+      )}
+
+      {/* Sidebar toggle */}
+      {onSidebarToggle && (
+        <button
+          onClick={() => onSidebarToggle(!sidebarCollapsed)}
+          title={sidebarCollapsed ? 'Show symbol list' : 'Hide symbol list'}
+          style={{
+            ...mono,
+            fontSize: 10,
+            padding: '3px 8px',
+            borderRadius: 4,
+            border: `1px solid ${C.border}`,
+            background: 'transparent',
+            color: C.dim,
+            cursor: 'pointer',
+            letterSpacing: '0.04em',
+            transition: 'background 120ms, color 120ms, border-color 120ms',
+            marginLeft: 4,
+          }}
+        >
+          {sidebarCollapsed ? '◀' : '▶'}
+        </button>
+      )}
+
+      {/* Spacer + Legend toggle */}
+      <div style={{ flex: 1 }} />
+
+      <button
+        onClick={() => setShowLegend(!showLegend)}
+        onMouseEnter={() => setPopover(null)}
+        title="Toggle color legend"
+        style={{
+          ...mono,
+          fontSize: 10,
+          padding: '3px 8px',
+          borderRadius: 4,
+          border: `1px solid ${C.border}`,
+          background: showLegend ? `${C.long}14` : 'transparent',
+          color: showLegend ? C.long : C.dim,
+          cursor: 'pointer',
+          letterSpacing: '0.04em',
+          transition: 'background 120ms, color 120ms, border-color 120ms',
+        }}
+      >
+        <span style={{ marginRight: 4, opacity: showLegend ? 1 : 0.4 }}>
+          {showLegend ? '●' : '○'}
+        </span>
+        Legend
+      </button>
+
+      {showLegend && (
+        <div
+          style={{
+            position: 'absolute',
+            top: '100%',
+            right: '10px',
+            marginTop: '2px',
+            background: C.panel,
+            border: `1px solid ${C.border}`,
+            borderRadius: 6,
+            padding: '8px 12px',
+            fontSize: 10,
+            color: C.ink,
+            zIndex: 1000,
+            boxShadow: '0 4px 12px rgba(0,0,0,0.5)',
+            ...mono,
+            whiteSpace: 'nowrap',
+          }}
+        >
+          <div style={{ marginBottom: 6, paddingBottom: 6, borderBottom: `1px solid ${C.border}` }}>
+            <strong style={{ color: C.long }}>COLORS</strong>
+          </div>
+          <div style={{ lineHeight: '1.6', color: '#aaa' }}>
+            <div>▮ <span style={{ color: C.long }}>Cyan</span> = BUY / Long</div>
+            <div>▮ <span style={{ color: '#f97366' }}>Red</span> = SELL / Short</div>
+            <div style={{ marginTop: 6, paddingTop: 6, borderTop: `1px solid ${C.border}` }}>
+              <div>▮ <span style={{ color: '#fbbf24' }}>Warn</span> = Alert state</div>
+              <div>▮ <span style={{ color: C.dim }}>Gray</span> = Neutral</div>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

@@ -11,6 +11,7 @@ import CorrelationPanel from '@/components/charts/CorrelationPanel';
 import PlacementPanel from '@/components/chart/PlacementPanel';
 import ChartToolbar, { DEFAULT_LAYERS, type ChartLayerState } from '@/components/chart/ChartToolbar';
 import SignalTooltip from '@/components/chart/SignalTooltip';
+import MarketBiasIndicator from '@/components/chart/MarketBiasIndicator';
 import { usePlacementSignal } from '@/lib/chart/usePlacementSignal';
 import { useMarketSocket, useInstrumentTick } from '@/lib/ws';
 import type { AssetClass } from '@orderflow/types';
@@ -324,7 +325,21 @@ export default function MarketView({ asset, tier }: Props) {
   const [selectedInstrument, setSelectedInstrument] = useState<string>(instruments[0]);
   const [searchQuery,        setSearchQuery]        = useState('');
   const [bottomPanel,        setBottomPanel]        = useState<BottomPanel>('placement');
-  const [layers,             setLayers]             = useState<ChartLayerState>(DEFAULT_LAYERS);
+  const [sidebarCollapsed,   setSidebarCollapsed]   = useState(false);
+
+  // Smart layer defaults by tier — Pro lands on the order-flow USP (footprint)
+  // visible by default; starter gets volume profile. Computed once at mount
+  // (tier is stable for the session) via a lazy initializer.
+  const [layers, setLayers] = useState<ChartLayerState>(() => {
+    const base = { ...DEFAULT_LAYERS };
+    if (tier === 'pro') {
+      base.footprint = true;
+      base.volume_profile = true;
+    } else if (tier === 'starter') {
+      base.volume_profile = true;
+    }
+    return base;
+  });
 
   // Connect to WebSocket for all instruments + market channels
   const { connected } = useMarketSocket(instruments, ['market:ticks', 'market:cvd_update', 'market:orderbook']);
@@ -486,6 +501,9 @@ export default function MarketView({ asset, tier }: Props) {
         {/* WS status */}
         <WsStatusBadge connected={connected} />
 
+        {/* Market bias indicator */}
+        <MarketBiasIndicator instrument={selectedInstrument} />
+
         {/* Tier badge */}
         <div
           style={{
@@ -517,12 +535,13 @@ export default function MarketView({ asset, tier }: Props) {
         {/* ── Left panel: instrument list + heatmap ───────────────────────── */}
         <div
           style={{
-            width: 260,
+            width: sidebarCollapsed ? 0 : 260,
             flexShrink: 0,
             display: 'flex',
             flexDirection: 'column',
-            borderRight: '1px solid #1f2128',
+            borderRight: sidebarCollapsed ? 'none' : '1px solid #1f2128',
             overflow: 'hidden',
+            transition: 'width 200ms ease',
           }}
         >
           {/* Instrument list header */}
@@ -623,7 +642,13 @@ export default function MarketView({ asset, tier }: Props) {
           }}
         >
           {/* Layer toolbar (P5-9) — tier-aware chart layer toggles */}
-          <ChartToolbar tier={tier} layers={layers} onChange={setLayers} />
+          <ChartToolbar
+            tier={tier}
+            layers={layers}
+            onChange={setLayers}
+            sidebarCollapsed={sidebarCollapsed}
+            onSidebarToggle={setSidebarCollapsed}
+          />
 
           {/* Chart pane — fills remaining vertical space above tape */}
           <div

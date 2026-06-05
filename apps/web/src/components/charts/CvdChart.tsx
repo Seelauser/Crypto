@@ -80,11 +80,21 @@ function barToCvdLine(bar: OhlcvBar): LineData {
 }
 
 // Compute CVD line color based on recent direction
+/**
+ * CVD line colour by *net* cumulative delta over the loaded window.
+ *
+ * `bar.cvd` accumulates from 0 at the first bar in the window, so the last
+ * bar's cvd is the net buy/sell pressure across the whole window. Colouring
+ * by that sign is stable: a single live-bar tick can't flip the whole line
+ * (it only moves cvd by a tiny amount relative to the window total). The old
+ * implementation compared last-vs-previous bar, which flipped the entire
+ * line cyan↔red on every tick as the live bar wiggled — the "flashing"
+ * that made long/short unreadable.
+ */
 function cvdLineColor(bars: OhlcvBar[]): string {
   if (bars.length < 2) return '#22d3ee';
-  const last = bars[bars.length - 1].cvd ?? 0;
-  const prev = bars[bars.length - 2].cvd ?? 0;
-  return last >= prev ? '#22d3ee' : '#f97366';
+  const net = bars[bars.length - 1].cvd ?? 0;
+  return net >= 0 ? '#22d3ee' : '#f97366';
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────

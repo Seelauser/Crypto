@@ -1,6 +1,6 @@
 # Next Session — Start From Here
 
-**Last updated:** 2026-06-05 (session 28) · **Latest commit on branch:** `abd5348`
+**Last updated:** 2026-06-05 (session 29) · **Version:** `v0.1.0`
 
 This is the single document a future session should read first. It captures
 **where we are**, **what's verified working**, and **what to pick up next**
@@ -30,6 +30,17 @@ without scrolling through prior checkpoints.
 ---
 
 ## 2. Recent shipped work (last session)
+
+Session 29 — **v0.1.0** chart-first UX pass (UI/UX review, on branch
+`claude/confident-lumiere-f967b9`, tagged `v0.1.0`). See [`CHANGELOG.md`](../CHANGELOG.md):
+
+- **Fixed the CVD line "flashing" long/short** — root cause was `cvdLineColor`
+  in `CvdChart` comparing last-vs-previous bar, which flips the whole line on
+  every live tick. Now colours by sign of net CVD over the window (stable).
+- Authenticated landing now `/markets/crypto` (chart first), not `/dashboard`.
+- Added market-bias badge, colour legend, tier-aware default layers, and a
+  collapsible symbol sidebar on the markets page.
+- Fixed legend-popover anchoring (toolbar needed `position: relative`).
 
 Session 28 — owner-homework-prep autonomous pass:
 
