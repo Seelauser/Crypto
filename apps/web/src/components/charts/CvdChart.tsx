@@ -7,10 +7,12 @@ import type {
   CandlestickData,
   HistogramData,
   LineData,
+  SeriesMarker,
   Time,
 } from 'lightweight-charts';
 import { useCvdStream } from '@/lib/ws';
 import type { OhlcvBar, CvdPoint } from '@orderflow/types';
+import type { PlacementSignal } from '@/lib/chart/types';
 
 // ─── Props ────────────────────────────────────────────────────────────────────
 
@@ -19,6 +21,29 @@ interface Props {
   height?: number;
   showRealTime?: boolean;
   tier?: 'free' | 'starter' | 'pro';
+  /** Emitted placement signals to render as candlestick markers (P5-6).
+   *  Caller controls the layer toggle; pass `[]` or omit to hide. */
+  placementHistory?: PlacementSignal[];
+  /** Fired when the user hovers a marker so a parent can render a tooltip
+   *  with the chart-explain LLM call. */
+  onMarkerHover?: (signal: PlacementSignal | null, x: number, y: number) => void;
+}
+
+// ─── Markers ──────────────────────────────────────────────────────────────────
+
+function signalToMarker(s: PlacementSignal): SeriesMarker<Time> {
+  const dir = s.direction;
+  const isLong  = dir === 'long';
+  const isShort = dir === 'short';
+  return {
+    time:     Math.floor(s.ts / 1000) as Time,
+    position: isLong ? 'belowBar' : isShort ? 'aboveBar' : 'inBar',
+    shape:    isLong ? 'arrowUp' : isShort ? 'arrowDown' : 'circle',
+    color:    isLong ? '#22d3ee' : isShort ? '#f97366' : '#5a5f6a',
+    text:     `${s.confidence}%`,
+    size:     s.strength >= 3 ? 2 : 1,
+    id:       `pl:${s.ts}:${dir}`,
+  };
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -69,6 +94,8 @@ export default function CvdChart({
   height = 480,
   showRealTime = false,
   tier = 'free',
+  placementHistory,
+  onMarkerHover,
 }: Props) {
   const containerRef     = useRef<HTMLDivElement>(null);
   const chartRef         = useRef<IChartApi | null>(null);
@@ -317,6 +344,50 @@ export default function CvdChart({
       populateChart(barsRef.current);
     }
   }, [instrument, populateChart]);
+
+  // ── Placement markers on candle series (P5-6) ─────────────────────────────
+  // The chart's first bar timestamp acts as a floor — markers older than that
+  // would clip outside the visible series and lightweight-charts rejects them.
+  useEffect(() => {
+    const series = candleSeriesRef.current;
+    if (!series) return;
+    if (!placementHistory || placementHistory.length === 0) {
+      series.setMarkers([]);
+      return;
+    }
+    const bars = barsRef.current;
+    const firstBarSec = bars.length
+      ? Math.floor(bars[0].ts / 1000)
+      : 0;
+    const markers = placementHistory
+      .filter(s => Math.floor(s.ts / 1000) >= firstBarSec)
+      .map(signalToMarker);
+    series.setMarkers(markers);
+  }, [placementHistory]);
+
+  // ── Crosshair → onMarkerHover ─────────────────────────────────────────────
+  // lightweight-charts has no "hover this marker" event, so we approximate:
+  // when the crosshair lands on a candle whose bar-time matches an emitted
+  // signal (±half a bar), surface that signal to the parent.
+  useEffect(() => {
+    const chart = chartRef.current;
+    if (!chart || !onMarkerHover || !placementHistory?.length) return;
+
+    const handler = (param: any) => {
+      if (!param?.time || !param.point) { onMarkerHover(null, 0, 0); return; }
+      const tSec = Number(param.time);
+      // Tolerance = the 5m bar width in seconds (matches the bars route).
+      const TOL = 300;
+      const hit = placementHistory.find(s => {
+        const sSec = Math.floor(s.ts / 1000);
+        return Math.abs(sSec - tSec) <= TOL;
+      });
+      if (hit) onMarkerHover(hit, param.point.x ?? 0, param.point.y ?? 0);
+      else     onMarkerHover(null, 0, 0);
+    };
+    chart.subscribeCrosshairMove(handler);
+    return () => chart.unsubscribeCrosshairMove(handler);
+  }, [onMarkerHover, placementHistory]);
 
   const isL2 = isCryptoInstrument(instrument);
   const showDelayBanner = !isRealTime && tier === 'free';

@@ -21,6 +21,12 @@ function instrumentMatches(streamInstr: string | undefined, target: string): boo
 
 export interface PlacementState {
   signal:         PlacementSignal | null;
+  /**
+   * Recent *emitted* signals (above EMIT_THRESHOLD). One entry per
+   * direction-change or significant confidence jump — what the chart renders
+   * as markers. Capped at MAX_HISTORY; ordered oldest → newest.
+   */
+  history:        PlacementSignal[];
   connected:      boolean;
   cvd:            number | null;
   imbalanceRatio: number | null;
@@ -29,8 +35,12 @@ export interface PlacementState {
 }
 
 const EMPTY: PlacementState = {
-  signal: null, connected: false, cvd: null, imbalanceRatio: null, lastSweep: null, divergence: null,
+  signal: null, history: [], connected: false, cvd: null, imbalanceRatio: null, lastSweep: null, divergence: null,
 };
+
+const MAX_HISTORY     = 50;
+const HISTORY_MAX_AGE = 60 * 60 * 1000; // 1h
+const CONF_JUMP_MIN   = 15;             // re-emit when confidence jumps ≥15pts in same direction
 
 /**
  * Live placement-signal hook. Opens its own WebSocket to the gateway (isolated
@@ -73,14 +83,36 @@ export function usePlacementSignal(instrument: string, enabled = true): Placemen
         ts:         Date.now(),
       };
       const signal = scorePlacement(inputs);
-      setState(s => ({
-        ...s,
-        signal,
-        cvd:            r.cvd,
-        imbalanceRatio: r.imbalance?.ratio ?? null,
-        lastSweep:      recentSweep ? { side: recentSweep.side, notionalUsd: recentSweep.notionalUsd, ts: recentSweep.ts } : null,
-        divergence:     r.divergence,
-      }));
+      setState(s => {
+        // Append to history when a NEW emitted signal is observed:
+        //   1) crosses from no-emit → emit,
+        //   2) direction changes,
+        //   3) confidence jumps ≥ CONF_JUMP_MIN in the same direction.
+        const emitted = signal.strength > 0;
+        const last    = s.history[s.history.length - 1];
+        const shouldAppend =
+          emitted && (
+            !last ||
+            last.direction !== signal.direction ||
+            Math.abs(signal.confidence - last.confidence) >= CONF_JUMP_MIN
+          );
+        let history = s.history;
+        if (shouldAppend) {
+          history = [...s.history, signal];
+        }
+        // Drop entries older than 1h and cap at MAX_HISTORY.
+        const cutoff = Date.now() - HISTORY_MAX_AGE;
+        history = history.filter(h => h.ts >= cutoff).slice(-MAX_HISTORY);
+        return {
+          ...s,
+          signal,
+          history,
+          cvd:            r.cvd,
+          imbalanceRatio: r.imbalance?.ratio ?? null,
+          lastSweep:      recentSweep ? { side: recentSweep.side, notionalUsd: recentSweep.notionalUsd, ts: recentSweep.ts } : null,
+          divergence:     r.divergence,
+        };
+      });
     };
 
     // ── Divergence poll (the detector publishes every ~120s) ───────────────

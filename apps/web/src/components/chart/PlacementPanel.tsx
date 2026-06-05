@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { usePlacementSignal } from '@/lib/chart/usePlacementSignal';
+import { usePlacementSignal, type PlacementState } from '@/lib/chart/usePlacementSignal';
 import { EMIT_THRESHOLD } from '@/lib/chart/types';
 
 const C = {
@@ -31,12 +31,21 @@ function dirArrow(dir: string) {
 export default function PlacementPanel({
   instrument,
   tier,
+  state: externalState,
 }: {
   instrument: string;
   tier: 'free' | 'starter' | 'pro';
+  /** Lifted placement state — when provided, the panel skips its own WS and
+   *  reads from this shared source. Required to keep the chart markers and
+   *  the panel in lock-step on the same signal stream. */
+  state?: PlacementState;
 }) {
   const isPaid = tier !== 'free';
-  const st = usePlacementSignal(instrument, isPaid);
+  // Only run the internal hook when no external state is supplied (legacy
+  // usages, e.g. unit tests). Hooks must be unconditional, so we always call
+  // it — but with enabled=false when external state covers us.
+  const internalState = usePlacementSignal(instrument, isPaid && !externalState);
+  const st = externalState ?? internalState;
 
   const [explain, setExplain] = useState<{ text: string; ai: boolean } | null>(null);
   const [explaining, setExplaining] = useState(false);

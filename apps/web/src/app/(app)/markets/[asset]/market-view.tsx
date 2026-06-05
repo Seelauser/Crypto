@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo, useEffect, useRef, type RefObject } from 'react';
+import { useState, useMemo, useEffect, useRef, useCallback, type RefObject } from 'react';
 import Link from 'next/link';
 import CvdChart from '@/components/charts/CvdChart';
 import OrderBookHeatmap from '@/components/charts/OrderBookHeatmap';
@@ -9,8 +9,12 @@ import TapeNarrator from '@/components/charts/TapeNarrator';
 import DeepAnalysisPanel from '@/components/charts/DeepAnalysisPanel';
 import CorrelationPanel from '@/components/charts/CorrelationPanel';
 import PlacementPanel from '@/components/chart/PlacementPanel';
+import ChartToolbar, { DEFAULT_LAYERS, type ChartLayerState } from '@/components/chart/ChartToolbar';
+import SignalTooltip from '@/components/chart/SignalTooltip';
+import { usePlacementSignal } from '@/lib/chart/usePlacementSignal';
 import { useMarketSocket, useInstrumentTick } from '@/lib/ws';
 import type { AssetClass } from '@orderflow/types';
+import type { PlacementSignal } from '@/lib/chart/types';
 
 type BottomPanel = 'placement' | 'tape' | 'tape_ai' | 'deep_analysis' | 'correlation';
 
@@ -320,9 +324,29 @@ export default function MarketView({ asset, tier }: Props) {
   const [selectedInstrument, setSelectedInstrument] = useState<string>(instruments[0]);
   const [searchQuery,        setSearchQuery]        = useState('');
   const [bottomPanel,        setBottomPanel]        = useState<BottomPanel>('placement');
+  const [layers,             setLayers]             = useState<ChartLayerState>(DEFAULT_LAYERS);
 
   // Connect to WebSocket for all instruments + market channels
   const { connected } = useMarketSocket(instruments, ['market:ticks', 'market:cvd_update', 'market:orderbook']);
+
+  // ─── Lifted placement signal — feeds the chart markers + bottom panel from
+  //     a single WebSocket subscription (avoids running the placement hook
+  //     twice when both surfaces are visible).
+  const placementState = usePlacementSignal(selectedInstrument, tier !== 'free');
+
+  // Cropped, instrument-scoped marker history. Resets when the instrument
+  // changes so old BTCUSDT markers don't decorate ETHUSDT's chart.
+  const placementHistory = useMemo(
+    () => placementState.history.filter(s => s.instrument === selectedInstrument),
+    [placementState.history, selectedInstrument],
+  );
+
+  // ─── Marker hover state (chart → tooltip)
+  const [hover, setHover] = useState<{ signal: PlacementSignal; x: number; y: number } | null>(null);
+  const handleMarkerHover = useCallback((signal: PlacementSignal | null, x: number, y: number) => {
+    if (!signal) { setHover(null); return; }
+    setHover({ signal, x, y });
+  }, []);
 
   // Stable mock data per instrument (seeded, consistent across renders)
   const mockDataMap = useMemo<Map<string, MockInstrumentData>>(() => {
@@ -598,6 +622,9 @@ export default function MarketView({ asset, tier }: Props) {
             minWidth: 0,
           }}
         >
+          {/* Layer toolbar (P5-9) — tier-aware chart layer toggles */}
+          <ChartToolbar tier={tier} layers={layers} onChange={setLayers} />
+
           {/* Chart pane — fills remaining vertical space above tape */}
           <div
             ref={chartPaneRef}
@@ -612,6 +639,14 @@ export default function MarketView({ asset, tier }: Props) {
               instrument={selectedInstrument}
               tier={tier}
               containerRef={chartPaneRef}
+              placementHistory={layers.placement ? placementHistory : []}
+              onMarkerHover={layers.placement ? handleMarkerHover : undefined}
+            />
+            <SignalTooltip
+              signal={hover?.signal ?? null}
+              position={hover ? { x: hover.x, y: hover.y } : null}
+              instrument={selectedInstrument}
+              tier={tier}
             />
           </div>
 
@@ -683,7 +718,7 @@ export default function MarketView({ asset, tier }: Props) {
               }}
             >
               {bottomPanel === 'placement' && (
-                <PlacementPanel instrument={selectedInstrument} tier={tier} />
+                <PlacementPanel instrument={selectedInstrument} tier={tier} state={placementState} />
               )}
 
               {bottomPanel === 'tape' && (
@@ -736,10 +771,14 @@ function ChartPaneAutoHeight({
   instrument,
   tier,
   containerRef,
+  placementHistory,
+  onMarkerHover,
 }: {
   instrument: string;
   tier: 'free' | 'starter' | 'pro';
   containerRef: RefObject<HTMLDivElement | null>;
+  placementHistory?: PlacementSignal[];
+  onMarkerHover?: (signal: PlacementSignal | null, x: number, y: number) => void;
 }) {
   const [chartHeight, setChartHeight] = useState(420);
 
@@ -768,6 +807,8 @@ function ChartPaneAutoHeight({
       height={chartHeight}
       showRealTime={tier === 'pro'}
       tier={tier}
+      placementHistory={placementHistory}
+      onMarkerHover={onMarkerHover}
     />
   );
 }
