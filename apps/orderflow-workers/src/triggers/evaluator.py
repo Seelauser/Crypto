@@ -171,6 +171,59 @@ async def evaluate_trigger(
         return False
 
     # ------------------------------------------------------------------
+    # sweep_with_absorption — a sweep where price reverted within a short
+    # window (the aggressor sweep was absorbed by passive book / iceberg).
+    # Heuristic: most recent sweep occurred ≤ window_secs ago, AND last_price
+    # moved against the sweep side by at least revert_frac of the swept range.
+    # ------------------------------------------------------------------
+    if trigger_type == "sweep_with_absorption":
+        window_secs: float = float(params.get("window_secs", 5.0))
+        revert_frac: float = float(params.get("revert_frac", 0.5))
+        min_notional_sa: float = float(params.get("min_notional_usd", 100_000))
+        recent_sweeps_sa: list = market_state.get("recent_sweeps", [])
+        if not recent_sweeps_sa:
+            return False
+        sw = recent_sweeps_sa[-1]
+        sw_ts_ms = int(sw.get("ts") or 0)
+        age = time.time() - (sw_ts_ms / 1000.0) if sw_ts_ms else float("inf")
+        if age > window_secs:
+            return False
+        if float(sw.get("notional_usd", 0)) < min_notional_sa:
+            return False
+        side = sw.get("side")
+        price_start = float(sw.get("price_start") or 0.0)
+        price_end = float(sw.get("price_end") or 0.0)
+        now_price = float(market_state.get("last_price") or 0.0)
+        if price_start <= 0.0 or price_end <= 0.0 or now_price <= 0.0:
+            return False
+        sweep_range = abs(price_end - price_start)
+        if sweep_range <= 0.0:
+            return False
+        revert = price_end - now_price if side == "buy" else now_price - price_end
+        # Positive revert = price gave back the sweep direction.
+        return revert >= sweep_range * revert_frac
+
+    # ------------------------------------------------------------------
+    # delta_exhaustion — earlier window's |delta| materially exceeds the
+    # latest's, with consistent sign throughout. Signals a fading impulse.
+    # ------------------------------------------------------------------
+    if trigger_type == "delta_exhaustion":
+        min_samples: int = int(params.get("min_samples", 6))
+        ratio: float = float(params.get("decay_ratio", 2.0))
+        deltas: list = market_state.get("recent_deltas", [])
+        if len(deltas) < min_samples:
+            return False
+        half = len(deltas) // 2
+        earlier = deltas[:half]
+        later = deltas[half:]
+        if not earlier or not later:
+            return False
+        early_abs = sum(abs(float(d)) for d in earlier) / len(earlier)
+        late_abs  = sum(abs(float(d)) for d in later)  / len(later)
+        same_sign = all(float(d) > 0 for d in deltas) or all(float(d) < 0 for d in deltas)
+        return bool(same_sign and late_abs > 0 and early_abs >= late_abs * ratio)
+
+    # ------------------------------------------------------------------
     # Unknown trigger type — log and return False
     # ------------------------------------------------------------------
     logger.warning("Unknown trigger type: %r", trigger_type)
@@ -207,6 +260,9 @@ class _MarketStateStore:
                 "recent_sweeps": [],
                 "recent_large_prints": [],
                 "recent_absorptions": [],
+                # Rolling buffer of signed delta_60s values for the
+                # delta_exhaustion trigger. Bounded by MAX_RECENT.
+                "recent_deltas": [],
             }
         return self._state[instrument]
 
@@ -251,6 +307,14 @@ class _MarketStateStore:
             state["cvd"] = float(msg["cvd"])
         if "delta" in msg:
             state["delta"] = float(msg["delta"])
+        # Track delta_60s for the delta_exhaustion trigger. Cap at MAX_RECENT
+        # so we never grow unbounded under bursty traffic.
+        d60 = msg.get("delta_60s")
+        if isinstance(d60, (int, float)):
+            buf = state.setdefault("recent_deltas", [])
+            buf.append(float(d60))
+            if len(buf) > self.MAX_RECENT:
+                state["recent_deltas"] = buf[-self.MAX_RECENT :]
         return instrument
 
     def apply_sweep(self, msg: Dict[str, Any]) -> str:

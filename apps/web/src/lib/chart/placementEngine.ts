@@ -90,6 +90,23 @@ export function scorePlacement(inputs: PlacementInputs): PlacementSignal {
     push('funding_extreme', `funding ${(inputs.funding * 100).toFixed(3)}% (${inputs.funding > 0 ? 'longs crowded' : 'shorts crowded'})`);
   }
 
+  // delta_exhaustion (18) — early window's delta magnitude is materially
+  // larger than the latest window's, with consistent sign throughout. Signals
+  // a fading impulse: the move continues but the order flow driving it is
+  // running out. Needs ≥6 samples to compare halves with statistical weight.
+  const dh = inputs.recentDeltas;
+  if (dh && dh.length >= 6) {
+    const half = Math.floor(dh.length / 2);
+    const earlier = dh.slice(0, half);
+    const later   = dh.slice(half);
+    const earlyAbs = earlier.reduce((s, d) => s + Math.abs(d), 0) / earlier.length;
+    const lateAbs  = later.reduce((s, d) => s + Math.abs(d), 0) / later.length;
+    const sameSign = dh.every(d => d > 0) || dh.every(d => d < 0);
+    if (sameSign && lateAbs > 0 && earlyAbs >= lateAbs * 2) {
+      push('delta_exhaustion', `delta impulse fading (early avg ${earlyAbs.toFixed(0)} → late ${lateAbs.toFixed(0)})`);
+    }
+  }
+
   // ── Score ──────────────────────────────────────────────────────────────────
   const sum        = triggers.reduce((s, t) => s + t.weight, 0);
   const confidence = Math.min(100, Math.round((sum / MAX_WEIGHT_SUM) * 100));
@@ -103,6 +120,10 @@ export function scorePlacement(inputs: PlacementInputs): PlacementSignal {
   } else if (inputs.sweep?.absorbed) {
     // Absorbed sweep → fade the sweep side (buy sweep absorbed → short setup).
     direction = inputs.sweep.side === 'buy' ? 'short' : 'long';
+  } else if (triggers.some(t => t.type === 'delta_exhaustion')) {
+    // Impulse fading → fade direction: positive deltas exhausting → short.
+    const last = dh ? dh[dh.length - 1] : 0;
+    direction = last > 0 ? 'short' : last < 0 ? 'long' : 'neutral';
   } else if (cluster) {
     direction = cluster.side === 'buy' ? 'long' : 'short';
   }

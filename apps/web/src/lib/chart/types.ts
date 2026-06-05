@@ -89,6 +89,12 @@ export interface PlacementInputs {
   imbalance?:     { ratio: number; dominant: 'bid' | 'ask' } | null;
   /** Perp funding rate (fraction, e.g. 0.0001 = 0.01%). */
   funding?:       number | null;
+  /**
+   * Recent (signed) bar/window deltas, ordered oldest → newest. Used by
+   * `delta_exhaustion` — an impulse fades when the magnitude of recent
+   * deltas falls vs. the earlier ones while CVD direction holds.
+   */
+  recentDeltas?:  number[] | null;
   regime?:        string | null;
   ts?:            number;
 }

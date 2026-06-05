@@ -61,11 +61,13 @@ export function usePlacementSignal(instrument: string, enabled = true): Placemen
     lastAbsorbTs: number;
     divergence: { kind: 'bullish' | 'bearish'; strength?: number } | null;
     funding: number | null;
-  }>({ cvd: null, cvdPrev: null, imbalance: null, sweeps: [], lastAbsorbTs: 0, divergence: null, funding: null });
+    /** Signed delta_60s samples, oldest → newest, for delta_exhaustion. */
+    recentDeltas: number[];
+  }>({ cvd: null, cvdPrev: null, imbalance: null, sweeps: [], lastAbsorbTs: 0, divergence: null, funding: null, recentDeltas: [] });
 
   useEffect(() => {
     if (!enabled || !instrument || typeof window === 'undefined') return;
-    roll.current = { cvd: null, cvdPrev: null, imbalance: null, sweeps: [], lastAbsorbTs: 0, divergence: null, funding: null };
+    roll.current = { cvd: null, cvdPrev: null, imbalance: null, sweeps: [], lastAbsorbTs: 0, divergence: null, funding: null, recentDeltas: [] };
     let closed = false;
     let ws: WebSocket | null = null;
 
@@ -74,13 +76,14 @@ export function usePlacementSignal(instrument: string, enabled = true): Placemen
       const recentSweep = r.sweeps.filter(s => Date.now() - s.ts < SWEEP_WINDOW_MS).pop() ?? null;
       const inputs: PlacementInputs = {
         instrument,
-        cvd:        r.cvd ?? 0,
-        cvdPrev:    r.cvdPrev,
-        divergence: r.divergence,
-        imbalance:  r.imbalance,
-        sweep:      recentSweep ? { side: recentSweep.side, absorbed: recentSweep.absorbed } : null,
-        funding:    r.funding,
-        ts:         Date.now(),
+        cvd:          r.cvd ?? 0,
+        cvdPrev:      r.cvdPrev,
+        divergence:   r.divergence,
+        imbalance:    r.imbalance,
+        sweep:        recentSweep ? { side: recentSweep.side, absorbed: recentSweep.absorbed } : null,
+        funding:      r.funding,
+        recentDeltas: r.recentDeltas.length ? [...r.recentDeltas] : null,
+        ts:           Date.now(),
       };
       const signal = scorePlacement(inputs);
       setState(s => {
@@ -165,6 +168,13 @@ export function usePlacementSignal(instrument: string, enabled = true): Placemen
         switch (m.type) {
           case 'market_cvd_update':
             if (typeof d.cvd === 'number') { r.cvdPrev = r.cvd; r.cvd = d.cvd; }
+            // Track recent 60s deltas for delta_exhaustion. The stream emits
+            // per-update deltas; we cap at 12 samples (~12m at the current
+            // worker cadence) to give the engine enough signal for halving.
+            if (typeof d.delta_60s === 'number') {
+              r.recentDeltas.push(d.delta_60s);
+              if (r.recentDeltas.length > 12) r.recentDeltas.shift();
+            }
             break;
           case 'market_imbalance_update': {
             const ratio = d.imbalance_ratio;
