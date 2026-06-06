@@ -673,6 +673,7 @@ export default function MarketView({ asset, tier }: Props) {
               primaryView={layers.footprint ? 'footprint' : layers.orderbook ? 'depth' : 'candles'}
               placementHistory={layers.placement ? placementHistory : []}
               onMarkerHover={layers.placement ? handleMarkerHover : undefined}
+              lastSweep={placementState.lastSweep}
             />
             <SignalTooltip
               signal={hover?.signal ?? null}
@@ -814,6 +815,7 @@ function ChartPaneAutoHeight({
   primaryView,
   placementHistory,
   onMarkerHover,
+  lastSweep,
 }: {
   instrument: string;
   tier: 'free' | 'starter' | 'pro';
@@ -824,6 +826,7 @@ function ChartPaneAutoHeight({
   primaryView: 'candles' | 'footprint' | 'depth';
   placementHistory?: PlacementSignal[];
   onMarkerHover?: (signal: PlacementSignal | null, x: number, y: number) => void;
+  lastSweep?: { side: string; notionalUsd: number; ts: number; absorbed: boolean } | null;
 }) {
   const [chartHeight, setChartHeight] = useState(420);
 
@@ -854,7 +857,7 @@ function ChartPaneAutoHeight({
   }, [containerRef]);
 
   if (primaryView === 'footprint') {
-    return <FootprintChart instrument={instrument} tier={tier} height={chartHeight} />;
+    return <FootprintChart instrument={instrument} tier={tier} height={chartHeight} lastSweep={lastSweep} />;
   }
   if (primaryView === 'depth') {
     return <DomLadder instrument={instrument} tier={tier} height={chartHeight} />;

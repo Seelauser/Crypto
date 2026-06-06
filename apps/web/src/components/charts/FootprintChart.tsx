@@ -25,7 +25,22 @@ interface Props {
   instrument: string;
   tier: UserTier;
   height?: number;
+  /**
+   * Most recent sweep read from the lifted placement signal (shared WS
+   * subscription — see market-view.tsx). Drives the spike-fade / absorption-
+   * glow overlays on the latest bar: a raw sweep flashes and decays quickly,
+   * an *absorbed* sweep (aggression met by resting size) glows and holds —
+   * the visual distinction between "the move continued" and "the move was
+   * eaten" is the whole point of an order-flow-specialised chart (Phase 3 of
+   * the UI redesign; ATAS/Bookmap convention).
+   */
+  lastSweep?: { side: string; notionalUsd: number; ts: number; absorbed: boolean } | null;
 }
+
+/** Spike-fade duration for an un-absorbed sweep — quick flash, quick decay. */
+const SWEEP_FLASH_MS = 3_000;
+/** Sustained glow duration for an absorbed sweep — the read that matters more. */
+const ABSORPTION_GLOW_MS = 12_000;
 
 const CELL_H = 16;
 const BAR_W = 80;
@@ -43,7 +58,28 @@ const COLORS = {
   buy10x: 'rgba(239,68,68,0.35)',
   candleUp: '#22d3ee20',
   candleDown: '#f9736620',
+  sweepBuy: '34,211,238',   // rgb triplets — alpha varies with the fade/glow timeline
+  sweepSell: '249,115,102',
+  glow: '251,191,36',
 };
+
+/**
+ * Imbalance highlight as a continuous intensity, not a binary 3×/10× bucket —
+ * the reader should see *how* extreme a level is, not just whether it crossed
+ * an arbitrary line. Ramps from transparent at 3× to fully saturated at 10×+,
+ * tinted amber→red as it escalates (matches the existing 3x/10x palette so
+ * the convention stays familiar, just continuous).
+ */
+function imbalanceFill(ratio: number): string | null {
+  if (ratio < 3) return null;
+  const t = Math.min(1, (ratio - 3) / 7); // 3× → 0, 10×+ → 1
+  const alpha = 0.12 + t * 0.28;          // 0.12 → 0.40
+  // Interpolate amber (251,191,36) → red (239,68,68) as intensity rises.
+  const r = Math.round(251 + (239 - 251) * t);
+  const g = Math.round(191 + (68 - 191) * t);
+  const b = Math.round(36 + (68 - 36) * t);
+  return `rgba(${r},${g},${b},${alpha.toFixed(3)})`;
+}
 
 function generateMockBars(basePrice: number, count = 12): FootprintBar[] {
   const bars: FootprintBar[] = [];
@@ -86,12 +122,27 @@ function generateMockBars(basePrice: number, count = 12): FootprintBar[] {
   return bars;
 }
 
-export default function FootprintChart({ instrument, tier, height = 480 }: Props) {
+export default function FootprintChart({ instrument, tier, height = 480, lastSweep }: Props) {
   const [showGate, setShowGate] = useState(false);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [bars, setBars] = useState<FootprintBar[]>([]);
   const [hoverBar, setHoverBar] = useState<number | null>(null);
   const [hoverCell, setHoverCell] = useState<FootprintCell | null>(null);
+
+  // ── Sweep / absorption animation clock ──────────────────────────────────
+  // Re-renders on a timer while a recent sweep is within its flash/glow
+  // window, so the overlay visibly decays rather than appearing/vanishing as
+  // a hard cut. Stops itself once the active effect has fully faded — no
+  // wasted redraws once the read goes stale.
+  const [animTick, setAnimTick] = useState(0);
+  useEffect(() => {
+    if (!lastSweep) return;
+    const duration = lastSweep.absorbed ? ABSORPTION_GLOW_MS : SWEEP_FLASH_MS;
+    const elapsed = Date.now() - lastSweep.ts;
+    if (elapsed >= duration) return;
+    const id = setInterval(() => setAnimTick(t => t + 1), 120);
+    return () => clearInterval(id);
+  }, [lastSweep]);
 
   // Base price by instrument
   const BASE_PRICES: Record<string, number> = {
@@ -183,12 +234,12 @@ export default function FootprintChart({ instrument, tier, height = 480 }: Props
         // Map 0..1 onto HEADER_H..(H - CELL_H) so no cell is clipped by the header
         const y = HEADER_H + Math.round(yPct * (drawH - CELL_H));
 
-        // Highlight
-        if (cell.highlight === '10x') {
-          ctx.fillStyle = COLORS.buy10x;
-          ctx.fillRect(x, y, BAR_W, CELL_H);
-        } else if (cell.highlight === '3x') {
-          ctx.fillStyle = COLORS.buy3x;
+        // Imbalance highlight — continuous intensity (see imbalanceFill),
+        // not a binary 3×/10× cutoff. How extreme a level is matters as much
+        // as whether it crossed the line.
+        const fill = imbalanceFill(cell.ratio);
+        if (fill) {
+          ctx.fillStyle = fill;
           ctx.fillRect(x, y, BAR_W, CELL_H);
         }
 
@@ -226,6 +277,38 @@ export default function FootprintChart({ instrument, tier, height = 480 }: Props
       ctx.font = 'bold 9px JetBrains Mono, monospace';
       ctx.textAlign = 'center';
       ctx.fillText(deltaText, x + BAR_W / 2, H - 4);
+
+      // ── Sweep / absorption overlay — latest bar only ──────────────────
+      // Two distinct visual languages, because they mean opposite things:
+      //   • raw sweep (not absorbed): aggression went through cleanly → a
+      //     quick, bright spike that fades fast (the moment passed).
+      //   • absorbed sweep: aggression met resting size and stalled → a
+      //     slow, sustained glow (the level held — the more durable read).
+      if (lastSweep && bIdx === bars.length - 1) {
+        const duration = lastSweep.absorbed ? ABSORPTION_GLOW_MS : SWEEP_FLASH_MS;
+        const elapsed = Date.now() - lastSweep.ts;
+        if (elapsed >= 0 && elapsed < duration) {
+          const life = 1 - elapsed / duration; // 1 → fresh, 0 → expired
+          const rgb = lastSweep.absorbed ? COLORS.glow : (lastSweep.side === 'buy' ? COLORS.sweepBuy : COLORS.sweepSell);
+          if (lastSweep.absorbed) {
+            // Sustained glow: slow pulse + persistent border halo.
+            const pulse = 0.55 + 0.45 * Math.sin(elapsed / 420);
+            ctx.fillStyle = `rgba(${rgb},${(life * 0.16 * pulse).toFixed(3)})`;
+            ctx.fillRect(x, HEADER_H, BAR_W, drawH);
+            ctx.strokeStyle = `rgba(${rgb},${(life * 0.9).toFixed(3)})`;
+            ctx.lineWidth = 2;
+            ctx.strokeRect(x + 1, HEADER_H + 1, BAR_W - 2, drawH - 2);
+          } else {
+            // Spike-fade: bright flash that decays quickly (eased — fast at first).
+            const eased = life * life;
+            ctx.fillStyle = `rgba(${rgb},${(eased * 0.35).toFixed(3)})`;
+            ctx.fillRect(x, HEADER_H, BAR_W, drawH);
+            ctx.strokeStyle = `rgba(${rgb},${(eased * 0.8).toFixed(3)})`;
+            ctx.lineWidth = 1.5;
+            ctx.strokeRect(x + 0.75, HEADER_H + 0.75, BAR_W - 1.5, drawH - 1.5);
+          }
+        }
+      }
     });
 
     // Vertical separator between price column and bars
@@ -235,7 +318,7 @@ export default function FootprintChart({ instrument, tier, height = 480 }: Props
     ctx.moveTo(PRICE_COL_W, HEADER_H);
     ctx.lineTo(PRICE_COL_W, H);
     ctx.stroke();
-  }, [bars, hoverBar, basePrice]); // hoverBar drives the hover-highlight on the active bar
+  }, [bars, hoverBar, basePrice, lastSweep, animTick]); // animTick drives the sweep/absorption decay redraw
 
   if (tier === 'free') {
     return (

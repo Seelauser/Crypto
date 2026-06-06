@@ -30,7 +30,7 @@ export interface PlacementState {
   connected:      boolean;
   cvd:            number | null;
   imbalanceRatio: number | null;
-  lastSweep:      { side: string; notionalUsd: number; ts: number } | null;
+  lastSweep:      { side: string; notionalUsd: number; ts: number; absorbed: boolean } | null;
   divergence:     { kind: 'bullish' | 'bearish'; strength?: number } | null;
 }
 
@@ -169,7 +169,7 @@ export function usePlacementSignal(instrument: string, enabled = true): Placemen
           history,
           cvd:            r.cvd,
           imbalanceRatio: r.imbalance?.ratio ?? null,
-          lastSweep:      recentSweep ? { side: recentSweep.side, notionalUsd: recentSweep.notionalUsd, ts: recentSweep.ts } : null,
+          lastSweep:      recentSweep ? { side: recentSweep.side, notionalUsd: recentSweep.notionalUsd, ts: recentSweep.ts, absorbed: recentSweep.absorbed } : null,
           divergence:     r.divergence,
         };
       });
