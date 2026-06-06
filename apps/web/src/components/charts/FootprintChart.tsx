@@ -149,7 +149,11 @@ export default function FootprintChart({ instrument, tier, height = 480, lastSwe
     if (elapsed >= duration) return;
     const id = setInterval(() => setAnimTick(t => t + 1), 120);
     return () => clearInterval(id);
-  }, [lastSweep]);
+    // lastSweep is a freshly-allocated object every ~1s recompute cycle even when
+    // the underlying sweep hasn't changed; depend on its stable primitive fields
+    // instead so the interval doesn't restart on every recompute tick.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lastSweep?.ts, lastSweep?.absorbed]);
 
   // Base price by instrument
   const BASE_PRICES: Record<string, number> = {
@@ -373,7 +377,6 @@ export default function FootprintChart({ instrument, tier, height = 480, lastSwe
         {hoverCell && (
           <span style={{ fontSize: 11, color: COLORS.muted, fontFamily: 'JetBrains Mono, monospace' }}>
             @ {hoverCell.price.toFixed(basePrice > 100 ? 1 : 5)} · bid {hoverCell.bidVol.toFixed(0)} · ask {hoverCell.askVol.toFixed(0)} · {hoverCell.ratio.toFixed(1)}×
-            {hoverCell.highlight && <span style={{ color: hoverCell.highlight === '10x' ? '#ef4444' : '#fbbf24', marginLeft: 6 }}>{hoverCell.highlight}</span>}
           </span>
         )}
       </div>
@@ -401,6 +404,12 @@ export default function FootprintChart({ instrument, tier, height = 480, lastSwe
             );
             setHoverCell(closest);
             onPriceHover?.(closest.price);
+          } else {
+            // cursor is over the price column or past the last bar — clear so the
+            // cross-pane heatmap highlight doesn't get stuck on a stale price
+            setHoverBar(null);
+            setHoverCell(null);
+            onPriceHover?.(null);
           }
         }}
         onMouseLeave={() => { setHoverBar(null); setHoverCell(null); onPriceHover?.(null); }}

@@ -50,6 +50,7 @@ export default function FlowStatsStrip({ instrument, timeframe, tier }: Props) {
     if (!isPaid) return;
     const mySeq = ++seq.current;
     setLoading(true);
+    setBars([]); // clear stale bars from the previous instrument/timeframe while the new fetch is in flight
     fetch(`/api/markets/${instrument}/bars?tf=${timeframe}&limit=${BAR_COUNT}`)
       .then(res => res.json())
       .then((payload: { bars?: OhlcvBar[] } | OhlcvBar[]) => {
