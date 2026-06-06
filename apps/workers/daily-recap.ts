@@ -166,7 +166,7 @@ async function generateUserRecap(
       feature:      'daily_recap',
       userId,
       userTier:     'premium',
-      maxTokens:    1024,
+      maxTokens:    800,
       systemBlocks: [SYSTEM_PROMPT_CACHE_BLOCK],
       messages:     [{ role: 'user', content: promptText }],
     });
@@ -266,7 +266,7 @@ async function main() {
 
   // C5 — pre-warm the prompt cache so the first user's recap doesn't pay the
   // cache-write inline. Opus is the only model this job uses.
-  await prewarmCache([{ model: 'claude-opus-4-8', feature: 'daily_recap' }])
+  await prewarmCache([{ model: 'claude-opus-4-7', feature: 'daily_recap' }])
     .catch(err => log.warn({ err: err?.message ?? String(err) }, 'prewarm failed (non-fatal)'));
 
   // 1. Load all Pro users with at least one active (armed) signal setup.

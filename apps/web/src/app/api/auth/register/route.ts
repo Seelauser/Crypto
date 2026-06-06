@@ -21,7 +21,14 @@ const registerSchema = z.object({
 });
 
 export async function POST(req: NextRequest) {
-  const ip = (req.headers.get('x-forwarded-for') ?? 'unknown').split(',')[0].trim();
+  // Use x-real-ip (set by nginx) first; fall back to the RIGHTMOST (trusted)
+  // entry in x-forwarded-for so a client cannot spoof the rate-limit key by
+  // prepending extra IPs. Leftmost entry in x-forwarded-for is user-supplied
+  // and must never be trusted for security decisions.
+  const ip =
+    req.headers.get('x-real-ip')?.trim() ??
+    req.headers.get('x-forwarded-for')?.split(',').at(-1)?.trim() ??
+    'unknown';
   const limit = await rateLimit('register', ip, 5, 60);
   if (!limit.allowed) {
     return NextResponse.json(

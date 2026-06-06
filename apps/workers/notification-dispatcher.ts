@@ -116,11 +116,11 @@ async function generateExplanation(
       feature:      'signal_explanation',
       userId,
       userTier:     tier,
-      maxTokens:    512,
+      maxTokens:    256,
       systemBlocks: [SYSTEM_PROMPT_CACHE_BLOCK],
       messages: (model) => [{
         role: 'user',
-        content: model === 'claude-haiku-4-5-20251001'
+        content: model === 'claude-haiku-4-5'
           ? buildSignalExplanationHaikuPrompt(snapshot, setupName)
           : buildSignalExplanationPrompt(snapshot, setupName),
       }],
@@ -387,13 +387,22 @@ async function handleSignalTriggered(raw: string): Promise<void> {
 async function main() {
   log.info('starting notification dispatcher');
 
-  // C5 — pre-warm the prompt cache before traffic arrives. signal_explanation
-  // is the dispatcher's only LLM feature; warming it covers free-tier (Haiku
-  // forced fallback inside callLlm) and premium (Sonnet) in one pass.
-  prewarmCache([
-    { model: 'claude-haiku-4-5-20251001', feature: 'signal_explanation_haiku' },
-    { model: 'claude-sonnet-4-6',         feature: 'signal_explanation' },
-  ]).catch(err => log.warn({ err: err?.message ?? String(err) }, 'prewarm failed (non-fatal)'));
+  // C5 — boot-time pre-warm: writes the cache so the first real signal call
+  // reads from it instead of paying the cache-write inline.
+  const PREWARM_TARGETS = [
+    { model: 'claude-haiku-4-5'  as const, feature: 'signal_explanation_haiku' as const },
+    { model: 'claude-sonnet-4-6' as const, feature: 'signal_explanation'        as const },
+  ];
+  prewarmCache(PREWARM_TARGETS)
+    .catch(err => log.warn({ err: err?.message ?? String(err) }, 'prewarm failed (non-fatal)'));
+
+  // Periodic re-warm every 4 minutes so the ephemeral cache (5-min TTL) never
+  // expires during low-traffic windows. Cost: ~$0.0006/warm per model pair.
+  const rewarmTimer = setInterval(() => {
+    prewarmCache(PREWARM_TARGETS)
+      .catch(err => log.warn({ err: err?.message ?? String(err) }, 'periodic re-warm failed (non-fatal)'));
+  }, 4 * 60 * 1000);
+  rewarmTimer.unref(); // don't block process exit on shutdown
 
   await subscriber.subscribe('signal:triggered', (err) => {
     if (err) {

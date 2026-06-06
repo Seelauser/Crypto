@@ -13,6 +13,9 @@ import type { UserTier, SignalSnapshot } from '@orderflow/types';
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const FREE_AI_QUOTA = 10;
+// Sliding-window burst cap: max 1 AI call per 10 seconds per user regardless
+// of tier. Prevents a single session from hammering the endpoint.
+const BURST_WINDOW_SEC = 10;
 
 // ─── Singletons ───────────────────────────────────────────────────────────────
 
@@ -46,6 +49,19 @@ export async function POST(
 
   const userId = session.user.id;
   const tier   = (session.user.tier ?? 'free') as UserTier;
+
+  // 1b. Sliding-window burst guard: 1 req / BURST_WINDOW_SEC per user.
+  //     Applied before quota checks so we reject spam cheaply (Redis-only, no DB).
+  const burstKey = `ai:burst:explain:${userId}`;
+  const burstCount = await redis.incr(burstKey);
+  if (burstCount === 1) await redis.expire(burstKey, BURST_WINDOW_SEC);
+  if (burstCount > 1) {
+    const ttl = await redis.ttl(burstKey);
+    return NextResponse.json(
+      { error: 'rate_limited', retryAfterSec: ttl > 0 ? ttl : BURST_WINDOW_SEC },
+      { status: 429, headers: { 'Retry-After': String(ttl > 0 ? ttl : BURST_WINDOW_SEC) } },
+    );
+  }
 
   // Parse body
   const body = await req.json().catch(() => null);
@@ -136,7 +152,7 @@ export async function POST(
       // Mirror the tier gate above: only Pro is metered as premium against the
       // token ledger (Sonnet). Free + Starter take the Haiku quota path.
       userTier:     tier === 'pro' ? 'premium' : 'free',
-      maxTokens:    512,
+      maxTokens:    256,
       systemBlocks: [SYSTEM_PROMPT_CACHE_BLOCK],
       messages: (model) => [{
         role: 'user',
