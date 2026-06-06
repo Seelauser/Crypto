@@ -140,35 +140,48 @@ export default function FootprintChart({ instrument, tier, height = 480 }: Props
     const dpr = window.devicePixelRatio ?? 1;
     const W = canvas.offsetWidth;
     const H = canvas.offsetHeight;
-    canvas.width = W * dpr;
+    // Guard: canvas hasn't been laid out yet (offsetWidth/Height = 0 on first
+    // render before the browser has measured the element).
+    if (W === 0 || H === 0) return;
+    canvas.width  = W * dpr;
     canvas.height = H * dpr;
     ctx.scale(dpr, dpr);
+
+    // The header bar is 32 px tall (position:absolute, zIndex:1) and overlays
+    // the top of the canvas.  All cell drawing must stay within the drawable
+    // band [HEADER_H .. H] so nothing is hidden beneath it.
+    const HEADER_H = 32;
+    const drawH = H - HEADER_H; // available vertical pixels for cells
 
     // Background
     ctx.fillStyle = COLORS.bg;
     ctx.fillRect(0, 0, W, H);
 
-    // Price column background
+    // Price column background (only the drawable band)
     ctx.fillStyle = COLORS.panel;
-    ctx.fillRect(0, 0, PRICE_COL_W, H);
+    ctx.fillRect(0, HEADER_H, PRICE_COL_W, drawH);
 
     // Draw each bar
     bars.forEach((bar, bIdx) => {
+      const isHovered = bIdx === hoverBar;
       const x = PRICE_COL_W + bIdx * (BAR_W + 2);
       if (x > W) return;
 
-      // Bar background (candle direction)
-      ctx.fillStyle = bar.close >= bar.open ? COLORS.candleUp : COLORS.candleDown;
-      ctx.fillRect(x, 0, BAR_W, H);
+      // Bar background (candle direction) — clamped to drawable band
+      ctx.fillStyle = isHovered
+        ? (bar.close >= bar.open ? 'rgba(34,211,238,0.12)' : 'rgba(249,115,102,0.12)')
+        : (bar.close >= bar.open ? COLORS.candleUp : COLORS.candleDown);
+      ctx.fillRect(x, HEADER_H, BAR_W, drawH);
 
-      // Cells
-      const priceMin = Math.min(...bar.cells.map(c => c.price));
-      const priceMax = Math.max(...bar.cells.map(c => c.price));
+      // Cells — map price range onto [HEADER_H .. H - CELL_H]
+      const priceMin   = Math.min(...bar.cells.map(c => c.price));
+      const priceMax   = Math.max(...bar.cells.map(c => c.price));
       const priceRange = priceMax - priceMin || 1;
 
       bar.cells.forEach(cell => {
         const yPct = 1 - (cell.price - priceMin) / priceRange;
-        const y = Math.round(yPct * (H - CELL_H));
+        // Map 0..1 onto HEADER_H..(H - CELL_H) so no cell is clipped by the header
+        const y = HEADER_H + Math.round(yPct * (drawH - CELL_H));
 
         // Highlight
         if (cell.highlight === '10x') {
@@ -180,7 +193,7 @@ export default function FootprintChart({ instrument, tier, height = 480 }: Props
         }
 
         // Cell border
-        ctx.strokeStyle = COLORS.border;
+        ctx.strokeStyle = isHovered ? '#2a2d36' : COLORS.border;
         ctx.lineWidth = 0.5;
         ctx.strokeRect(x + 0.5, y + 0.5, BAR_W - 1, CELL_H - 1);
 
@@ -198,7 +211,7 @@ export default function FootprintChart({ instrument, tier, height = 480 }: Props
         const askText = cell.askVol > 1000 ? `${(cell.askVol / 1000).toFixed(0)}K` : cell.askVol.toFixed(0);
         ctx.fillText(askText, x + halfW + 4, y + 11);
 
-        // Price label in price column (only for this bar if hovered or every 5th)
+        // Price label in price column (leftmost bar only)
         if (bIdx === 0) {
           ctx.fillStyle = COLORS.muted;
           ctx.font = '9px JetBrains Mono, monospace';
@@ -207,7 +220,7 @@ export default function FootprintChart({ instrument, tier, height = 480 }: Props
         }
       });
 
-      // Delta at bottom of bar
+      // Delta at bottom of bar (above the very bottom edge)
       const deltaText = `Δ${bar.delta > 0 ? '+' : ''}${bar.delta > 1000 ? `${(bar.delta / 1000).toFixed(0)}K` : bar.delta.toFixed(0)}`;
       ctx.fillStyle = bar.delta >= 0 ? COLORS.buy : COLORS.sell;
       ctx.font = 'bold 9px JetBrains Mono, monospace';
@@ -215,14 +228,14 @@ export default function FootprintChart({ instrument, tier, height = 480 }: Props
       ctx.fillText(deltaText, x + BAR_W / 2, H - 4);
     });
 
-    // Vertical separator
+    // Vertical separator between price column and bars
     ctx.strokeStyle = COLORS.border;
     ctx.lineWidth = 1;
     ctx.beginPath();
-    ctx.moveTo(PRICE_COL_W, 0);
+    ctx.moveTo(PRICE_COL_W, HEADER_H);
     ctx.lineTo(PRICE_COL_W, H);
     ctx.stroke();
-  }, [bars, hoverBar, basePrice]);
+  }, [bars, hoverBar, basePrice]); // hoverBar drives the hover-highlight on the active bar
 
   if (tier === 'free') {
     return (
@@ -276,19 +289,22 @@ export default function FootprintChart({ instrument, tier, height = 480 }: Props
       </div>
       <canvas
         ref={canvasRef}
-        style={{ width: '100%', height: '100%', paddingTop: 32, boxSizing: 'border-box', cursor: 'crosshair' }}
+        style={{ width: '100%', height: '100%', cursor: 'crosshair' }}
         onMouseMove={e => {
           const rect = canvasRef.current!.getBoundingClientRect();
           const x = e.clientX - rect.left;
-          const y = e.clientY - rect.top - 32;
+          // Subtract header height so y=0 aligns with the top of the drawable band
+          const HEADER_H = 32;
+          const y = e.clientY - rect.top - HEADER_H;
+          if (y < 0) return; // cursor is over the header — ignore
           const bIdx = Math.floor((x - PRICE_COL_W) / (BAR_W + 2));
           if (bIdx >= 0 && bIdx < bars.length) {
             setHoverBar(bIdx);
             const bar = bars[bIdx]!;
             const priceMin = Math.min(...bar.cells.map(c => c.price));
             const priceMax = Math.max(...bar.cells.map(c => c.price));
-            const H = rect.height - 32;
-            const pct = 1 - y / H;
+            const drawH = rect.height - HEADER_H;
+            const pct = 1 - y / drawH;
             const hoverPrice = priceMin + pct * (priceMax - priceMin);
             const closest = bar.cells.reduce((a, b) =>
               Math.abs(a.price - hoverPrice) < Math.abs(b.price - hoverPrice) ? a : b

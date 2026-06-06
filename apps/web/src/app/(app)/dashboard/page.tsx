@@ -48,6 +48,13 @@ function TierBadge({ tier }: { tier: string }) {
       </span>
     );
   }
+  if (tier === 'starter') {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full border border-[#22d3ee]/30 bg-[#22d3ee]/10 px-2.5 py-0.5 text-xs font-semibold text-[#22d3ee]">
+        Starter
+      </span>
+    );
+  }
   return (
     <span className="inline-flex items-center gap-1 rounded-full border border-[#1f2128] bg-[#13141a] px-2.5 py-0.5 text-xs font-medium text-[#8a8f9b]">
       Free
@@ -91,6 +98,12 @@ function DashboardHeader({
         )}
 
         {/* Quick-nav links — sidebar/drawer already exposes these, hide on mobile */}
+        <a
+          href="/markets/crypto"
+          className="hidden sm:inline-block rounded-lg border border-[#22d3ee]/30 bg-[#22d3ee]/10 px-3 py-1.5 text-xs font-medium text-[#22d3ee] transition-colors hover:bg-[#22d3ee]/20"
+        >
+          Live Chart
+        </a>
         <a
           href="/signals"
           className="hidden sm:inline-block rounded-lg border border-[#1f2128] bg-[#0a0a0b] px-3 py-1.5 text-xs text-[#8a8f9b] transition-colors hover:border-[#2a2d36] hover:text-[#e6e8ee]"
