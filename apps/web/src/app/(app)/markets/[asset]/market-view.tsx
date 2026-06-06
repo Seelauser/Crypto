@@ -11,6 +11,7 @@ import TapeNarrator from '@/components/charts/TapeNarrator';
 import DeepAnalysisPanel from '@/components/charts/DeepAnalysisPanel';
 import CorrelationPanel from '@/components/charts/CorrelationPanel';
 import PlacementPanel from '@/components/chart/PlacementPanel';
+import FlowStatsStrip from '@/components/chart/FlowStatsStrip';
 import ChartToolbar, { DEFAULT_LAYERS, type ChartLayerState } from '@/components/chart/ChartToolbar';
 import SignalTooltip from '@/components/chart/SignalTooltip';
 import MarketBiasIndicator from '@/components/chart/MarketBiasIndicator';
@@ -680,6 +681,11 @@ export default function MarketView({ asset, tier }: Props) {
               tier={tier}
             />
           </div>
+
+          {/* Bar-by-bar flow stats — Volume/Delta/Relative-Strength/CVD for
+              the last ~20 bars on the active timeframe (Phase 2 of the
+              order-flow UI redesign: scan recent flow without leaving the chart). */}
+          <FlowStatsStrip instrument={selectedInstrument} timeframe={timeframe} tier={tier} />
 
           {/* ── Bottom panel: tab bar + selected panel ─────────────────── */}
           <div
