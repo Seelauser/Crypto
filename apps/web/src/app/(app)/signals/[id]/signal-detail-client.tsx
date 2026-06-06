@@ -23,7 +23,15 @@ interface SignalEvent {
   id: string;
   setupId: string;
   instrument: string;
-  snapshot: Record<string, unknown>;
+  snapshot: {
+    price: number;
+    cvd: number;
+    delta: number;
+    imbalanceRatio: number;
+    triggerType: string;
+    exchange?: string;
+    [key: string]: unknown; // allow extra fields from DB without losing the required shape
+  };
   aiExplanation: string | null;
   aiModel: string | null;
   aiCostCents: number | null;

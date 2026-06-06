@@ -62,7 +62,7 @@ export async function GET(req: NextRequest) {
         try { d = JSON.parse(entry); } catch { continue; }
         if (d.instrument !== instrument) continue;
         markers.push({
-          ts:    d.ts,
+          ts:    typeof d.ts === 'number' ? d.ts : Date.now(),
           kind:  'divergence',
           label: `${d.kind} divergence`,
           price: typeof d.price_extreme === 'number' ? d.price_extreme : null,
