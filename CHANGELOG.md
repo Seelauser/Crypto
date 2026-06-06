@@ -5,6 +5,29 @@ All notable changes to OrderFlow Analytics are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0] — 2026-06-05
+
+Makes the chart actually interactive. The v0.1.0 toolbar tracked layer state
+but rendered nothing, and the timeframe was hard-coded — so the chart looked
+"broken / no evidence of action." This wires the controls to real behaviour.
+
+### Added
+- **Timeframe selector** (1m / 5m / 15m / 1h / 4h / 1d) in the chart header.
+  Drives the bars fetch (the API already accepted `tf`) and refetches on
+  change; marker-hover tolerance now scales with the active timeframe.
+- **Vol Profile layer now renders** — POC / VAH / VAL price lines (amber)
+  computed from the loaded bars, recalculated per timeframe, cleanly removed
+  when toggled off.
+- **Footprint layer now renders** the `FootprintChart` view, and **Depth**
+  renders the `DomLadder` view. Both components and their APIs
+  (`/footprint`, `/orderbook-history`) existed but had never been wired into
+  the markets page — the toggles were dead.
+
+### Fixed
+- **Chart redraw flicker** — the pane's `ResizeObserver` re-committed height on
+  every sub-pixel change, feeding back into the chart's own resize. It now only
+  commits changes > 2px, removing the jitter.
+
 ## [0.1.0] — 2026-06-05
 
 First tagged release. A chart-first UX pass that puts the order-flow product
