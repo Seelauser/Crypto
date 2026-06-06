@@ -5,11 +5,16 @@ import type { NextConfig } from 'next';
 // Tighten further once a nonce-based approach is wired into the middleware.
 const CSP = [
   "default-src 'self'",
-  "script-src 'self' 'unsafe-eval'",       // 'unsafe-eval' needed by Next.js dev overlay; remove in a future hardening pass
-  "style-src 'self' 'unsafe-inline'",      // Tailwind inlines styles
+  // Next.js requires 'unsafe-inline' for its runtime chunk + inline scripts.
+  // susy-x.com hosts the shared design-system (device-detect.js, bootstrap.js).
+  "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://www.susy-x.com https://js.stripe.com",
+  // Tailwind and CSS-in-JS inline styles; Google Fonts stylesheet.
+  "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
   "img-src 'self' data: blob:",
-  "font-src 'self' data:",
-  "connect-src 'self' wss: https://api.anthropic.com https://js.stripe.com",
+  // Google Fonts actual font files served from gstatic.
+  "font-src 'self' data: https://fonts.gstatic.com",
+  // WebSocket (wss:) for the live chart feed; Anthropic + Stripe for API calls.
+  "connect-src 'self' wss: https://api.anthropic.com https://js.stripe.com https://api.stripe.com",
   "frame-src 'none'",
   "object-src 'none'",
   "base-uri 'self'",
