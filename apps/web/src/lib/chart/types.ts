@@ -53,6 +53,14 @@ export interface PlacementTrigger {
   weight: number;
   /** Human-readable reason this trigger fired (shown in the tooltip). */
   detail: string;
+  /**
+   * Which way THIS individual trigger leans — independent of the engine's
+   * overall resolved `direction`. Lets the UI show a weighted-evidence
+   * breakdown (à la ATAS/Bookmap) instead of collapsing everything into one
+   * binary call, which is both more honest and more legible when triggers
+   * disagree.
+   */
+  lean:   PlacementDirection;
 }
 
 export interface PlacementSignal {

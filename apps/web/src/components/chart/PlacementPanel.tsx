@@ -101,6 +101,20 @@ export default function PlacementPanel({
   const dir = sig?.direction ?? 'neutral';
   const conf = sig?.confidence ?? 0;
 
+  // ── Evidence split: sum trigger weights by lean, independent of the ──────
+  // engine's resolved `direction`. This is what actually renders — a bar
+  // showing how the live evidence splits, rather than a single collapsed
+  // long/short call. Two readers looking at the same triggers can form their
+  // own view; the panel shows its work instead of asking for trust.
+  const triggers = sig?.triggers ?? [];
+  const longWeight    = triggers.filter(t => t.lean === 'long').reduce((s, t) => s + t.weight, 0);
+  const shortWeight   = triggers.filter(t => t.lean === 'short').reduce((s, t) => s + t.weight, 0);
+  const neutralWeight = triggers.filter(t => t.lean === 'neutral').reduce((s, t) => s + t.weight, 0);
+  const evidenceTotal = longWeight + shortWeight + neutralWeight;
+  const longPct    = evidenceTotal > 0 ? (longWeight / evidenceTotal) * 100 : 0;
+  const shortPct   = evidenceTotal > 0 ? (shortWeight / evidenceTotal) * 100 : 0;
+  const neutralPct = evidenceTotal > 0 ? 100 - longPct - shortPct : 100;
+
   return (
     <div style={{ padding: '12px 14px', height: '100%', overflowY: 'auto', boxSizing: 'border-box' }}>
       {/* Header */}
@@ -112,38 +126,67 @@ export default function PlacementPanel({
         </div>
       </div>
 
-      {/* Big read */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 14 }}>
-        <div style={{ ...mono, fontSize: 40, fontWeight: 800, color: dirColor(dir), lineHeight: 1 }}>
-          {dirArrow(dir)}
-        </div>
-        <div>
-          <div style={{ ...mono, fontSize: 22, fontWeight: 800, color: dirColor(dir), textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-            {emitted ? dir : 'no signal'}
+      {/* Confidence read — gauge first, directional call second. The call is
+          a summary of the evidence below it, not a headline to trust blindly. */}
+      <div style={{ marginBottom: 6 }}>
+        <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 6 }}>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
+            <span style={{ ...mono, fontSize: 20, fontWeight: 800, color: emitted ? dirColor(dir) : C.neutral }}>
+              {dirArrow(dir)} {emitted ? dir.toUpperCase() : 'NO SIGNAL'}
+            </span>
+            <span style={{ fontSize: 10, color: C.dim }}>
+              {emitted ? `strength ${sig!.strength}` : `below ${EMIT_THRESHOLD}% emit threshold`}
+            </span>
           </div>
-          <div style={{ fontSize: 11, color: C.dim }}>
-            {emitted ? `strength ${sig!.strength} · confidence` : `below ${EMIT_THRESHOLD}% emit threshold`}
-          </div>
+          <span style={{ ...mono, fontSize: 18, fontWeight: 800, color: emitted ? dirColor(dir) : C.neutral }}>
+            {conf}%
+          </span>
         </div>
-        <div style={{ marginLeft: 'auto', ...mono, fontSize: 30, fontWeight: 800, color: emitted ? dirColor(dir) : C.neutral }}>
-          {conf}%
+        {/* Confidence gauge — segmented at the strength-bucket boundaries
+            (EMIT_THRESHOLD/50/70) so the reader sees where this read sits
+            on the engine's own scale, not just a raw percentage. */}
+        <div style={{ position: 'relative', height: 8, background: C.bg, borderRadius: 4, overflow: 'hidden' }}>
+          <div style={{ width: `${conf}%`, height: '100%', background: emitted ? dirColor(dir) : C.neutral, transition: 'width 400ms ease' }} />
+          {[EMIT_THRESHOLD, 50, 70].map(mark => (
+            <div key={mark} title={`${mark}% strength threshold`}
+              style={{ position: 'absolute', left: `${mark}%`, top: 0, bottom: 0, width: 1, background: C.bg, opacity: 0.6 }} />
+          ))}
         </div>
       </div>
 
-      {/* Confidence bar */}
-      <div style={{ height: 6, background: C.bg, borderRadius: 3, overflow: 'hidden', marginBottom: 14 }}>
-        <div style={{ width: `${conf}%`, height: '100%', background: emitted ? dirColor(dir) : C.neutral, transition: 'width 300ms' }} />
-      </div>
+      {/* Evidence split — how the fired triggers' weight divides between
+          long-leaning, short-leaning and neutral reads. This is the honest
+          picture: the engine's `direction` is one resolution of this split,
+          not the only possible one. */}
+      {emitted && evidenceTotal > 0 && (
+        <div style={{ marginBottom: 14 }}>
+          <div style={{ display: 'flex', height: 6, borderRadius: 3, overflow: 'hidden', marginBottom: 4 }}>
+            {longPct > 0 && <div style={{ width: `${longPct}%`, background: C.long }} title={`long-leaning evidence: ${longWeight}`} />}
+            {neutralPct > 0 && <div style={{ width: `${neutralPct}%`, background: C.neutral }} title={`neutral evidence: ${neutralWeight}`} />}
+            {shortPct > 0 && <div style={{ width: `${shortPct}%`, background: C.short }} title={`short-leaning evidence: ${shortWeight}`} />}
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 9, color: C.dim, ...mono }}>
+            <span style={{ color: longWeight > 0 ? C.long : C.dim }}>long {longWeight}</span>
+            {neutralWeight > 0 && <span>neutral {neutralWeight}</span>}
+            <span style={{ color: shortWeight > 0 ? C.short : C.dim }}>short {shortWeight}</span>
+          </div>
+        </div>
+      )}
 
-      {/* Triggers fired */}
+      {/* Triggers fired — each chip colored by its OWN lean, not the engine's
+          resolved direction, so disagreement between signals stays visible. */}
       <div style={{ marginBottom: 14 }}>
-        <div style={{ fontSize: 10, color: C.dim, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6 }}>Triggers</div>
-        {sig && sig.triggers.length > 0 ? (
+        <div style={{ fontSize: 10, color: C.dim, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6 }}>Evidence breakdown</div>
+        {triggers.length > 0 ? (
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-            {sig.triggers.map(t => (
+            {triggers.map(t => (
               <span key={t.type} title={t.detail}
-                style={{ ...mono, fontSize: 11, color: C.ink, background: C.bg, border: `1px solid ${C.border}`, borderRadius: 4, padding: '3px 8px' }}>
-                {t.type.replace(/_/g, ' ')} <span style={{ color: C.dim }}>+{t.weight}</span>
+                style={{
+                  ...mono, fontSize: 11, color: dirColor(t.lean),
+                  background: `${dirColor(t.lean)}14`, border: `1px solid ${dirColor(t.lean)}40`,
+                  borderRadius: 4, padding: '3px 8px',
+                }}>
+                {dirArrow(t.lean)} {t.type.replace(/_/g, ' ')} <span style={{ color: C.dim }}>+{t.weight}</span>
               </span>
             ))}
           </div>

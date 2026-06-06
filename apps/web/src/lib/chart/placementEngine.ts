@@ -52,49 +52,81 @@ function detectPrintCluster(
 export function scorePlacement(inputs: PlacementInputs): PlacementSignal {
   const triggers: PlacementTrigger[] = [];
 
-  const push = (type: PlacementTrigger['type'], detail: string) =>
-    triggers.push({ type, weight: TRIGGER_WEIGHTS[type], detail });
+  const push = (type: PlacementTrigger['type'], detail: string, lean: PlacementDirection) =>
+    triggers.push({ type, weight: TRIGGER_WEIGHTS[type], detail, lean });
 
   // cvd_divergence (25) — price/CVD fork from the divergence detector.
+  // Bullish divergence (price down, CVD up) → long lean; bearish → short.
   if (inputs.divergence) {
-    push('cvd_divergence', `${inputs.divergence.kind} CVD/price divergence`);
+    push(
+      'cvd_divergence',
+      `${inputs.divergence.kind} CVD/price divergence`,
+      inputs.divergence.kind === 'bullish' ? 'long' : 'short',
+    );
   }
 
   // large_print_cluster (12) — 3+ prints ≥$50k same side within 30s.
+  // Clustered buy prints lean long, sell prints lean short.
   const cluster = inputs.largePrints ? detectPrintCluster(inputs.largePrints) : null;
   if (cluster) {
-    push('large_print_cluster', `${cluster.count}× ≥$50k ${cluster.side} prints clustered`);
+    push(
+      'large_print_cluster',
+      `${cluster.count}× ≥$50k ${cluster.side} prints clustered`,
+      cluster.side === 'buy' ? 'long' : 'short',
+    );
   }
 
   // sweep_with_absorption (22) — aggressive sweep met by passive absorption.
+  // Fade read: a buy sweep absorbed by resting asks leans short, and vice versa.
   if (inputs.sweep?.absorbed) {
-    push('sweep_with_absorption', `${inputs.sweep.side} sweep absorbed by passive book`);
+    push(
+      'sweep_with_absorption',
+      `${inputs.sweep.side} sweep absorbed by passive book`,
+      inputs.sweep.side === 'buy' ? 'short' : 'long',
+    );
   }
 
   // imbalance_extreme (10) — top-of-book ratio > 3:1 or < 1:3.
+  // Bid-dominant book (more resting buy interest) leans long; ask-dominant leans short.
   if (inputs.imbalance && (inputs.imbalance.ratio > 3 || inputs.imbalance.ratio < 1 / 3)) {
-    push('imbalance_extreme', `book imbalance ${inputs.imbalance.dominant}-dominant (${inputs.imbalance.ratio.toFixed(2)}×)`);
+    push(
+      'imbalance_extreme',
+      `book imbalance ${inputs.imbalance.dominant}-dominant (${inputs.imbalance.ratio.toFixed(2)}×)`,
+      inputs.imbalance.dominant === 'bid' ? 'long' : 'short',
+    );
   }
 
   // cvd_cross (8) — CVD crossed zero since the prior sample.
+  // Lean follows the direction of the cross itself.
   if (
     inputs.cvdPrev != null &&
     Math.sign(inputs.cvd) !== Math.sign(inputs.cvdPrev) &&
     inputs.cvd !== 0
   ) {
-    push('cvd_cross', `CVD crossed zero (${inputs.cvd > 0 ? 'turned positive' : 'turned negative'})`);
+    push(
+      'cvd_cross',
+      `CVD crossed zero (${inputs.cvd > 0 ? 'turned positive' : 'turned negative'})`,
+      inputs.cvd > 0 ? 'long' : 'short',
+    );
   }
 
   // funding_extreme (8) — perp funding rate ±0.1% (crowding → reversal risk).
+  // Contrarian read: longs crowded (positive funding) leans short, and vice versa.
   if (inputs.funding != null && Math.abs(inputs.funding) >= 0.001) {
-    push('funding_extreme', `funding ${(inputs.funding * 100).toFixed(3)}% (${inputs.funding > 0 ? 'longs crowded' : 'shorts crowded'})`);
+    push(
+      'funding_extreme',
+      `funding ${(inputs.funding * 100).toFixed(3)}% (${inputs.funding > 0 ? 'longs crowded' : 'shorts crowded'})`,
+      inputs.funding > 0 ? 'short' : 'long',
+    );
   }
 
   // delta_exhaustion (18) — early window's delta magnitude is materially
   // larger than the latest window's, with consistent sign throughout. Signals
   // a fading impulse: the move continues but the order flow driving it is
   // running out. Needs ≥6 samples to compare halves with statistical weight.
+  // Fade read: positive deltas exhausting lean short, negative lean long.
   const dh = inputs.recentDeltas;
+  let exhaustionLean: PlacementDirection = 'neutral';
   if (dh && dh.length >= 6) {
     const half = Math.floor(dh.length / 2);
     const earlier = dh.slice(0, half);
@@ -103,7 +135,9 @@ export function scorePlacement(inputs: PlacementInputs): PlacementSignal {
     const lateAbs  = later.reduce((s, d) => s + Math.abs(d), 0) / later.length;
     const sameSign = dh.every(d => d > 0) || dh.every(d => d < 0);
     if (sameSign && lateAbs > 0 && earlyAbs >= lateAbs * 2) {
-      push('delta_exhaustion', `delta impulse fading (early avg ${earlyAbs.toFixed(0)} → late ${lateAbs.toFixed(0)})`);
+      const last = dh[dh.length - 1];
+      exhaustionLean = last > 0 ? 'short' : last < 0 ? 'long' : 'neutral';
+      push('delta_exhaustion', `delta impulse fading (early avg ${earlyAbs.toFixed(0)} → late ${lateAbs.toFixed(0)})`, exhaustionLean);
     }
   }
 
@@ -121,9 +155,8 @@ export function scorePlacement(inputs: PlacementInputs): PlacementSignal {
     // Absorbed sweep → fade the sweep side (buy sweep absorbed → short setup).
     direction = inputs.sweep.side === 'buy' ? 'short' : 'long';
   } else if (triggers.some(t => t.type === 'delta_exhaustion')) {
-    // Impulse fading → fade direction: positive deltas exhausting → short.
-    const last = dh ? dh[dh.length - 1] : 0;
-    direction = last > 0 ? 'short' : last < 0 ? 'long' : 'neutral';
+    // Impulse fading → fade direction (computed once above as exhaustionLean).
+    direction = exhaustionLean;
   } else if (cluster) {
     direction = cluster.side === 'buy' ? 'long' : 'short';
   }
