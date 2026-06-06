@@ -1,6 +1,6 @@
 # Next Session — Start From Here
 
-**Last updated:** 2026-06-05 (session 29) · **Version:** `v0.1.0` (merged to `main` + **deployed live**)
+**Last updated:** 2026-06-06 (session 30) · **Version:** `v0.2.0`+ order-flow UI redesign Phases 1-4 + QA pass (merged to `main` + **deployed live**)
 
 This is the single document a future session should read first. It captures
 **where we are**, **what's verified working**, and **what to pick up next**
@@ -18,7 +18,7 @@ without scrolling through prior checkpoints.
 | **Live AI** | Phase -1 caching gate **PASSED** (Haiku 4.5 / Sonnet 4.6 / Opus 4.7 — 100% cache hit on repeat calls). C4 (per-feature cache block) + C5 (boot-time pre-warm) live. |
 | Live WebSocket | `WS: live` app-wide |
 | systemd units active | **17 services + 1 timer** |
-| Git | `main` @ `abd5348`, pushed to `origin/main` |
+| Git | `main` @ `312f44e`, pushed to `origin/main` |
 | Typecheck | `pnpm typecheck` — green (7/7) |
 | Lint | `pnpm lint` — 0 errors, 80 warnings (ESLint v9 flat config) |
 | Logging | Structured pino NDJSON with correlation IDs (`cid` field) across workers + api + ws-gateway |
@@ -30,6 +30,38 @@ without scrolling through prior checkpoints.
 ---
 
 ## 2. Recent shipped work (last session)
+
+Session 30 — **order-flow chart UI redesign (Phases 1-4) + quality-team QA
+pass**. Acted as product owner per "work until finished" mandate; shipped all
+4 phases, then ran a full QA gate (lint/typecheck/build/7-angle code review)
+and fixed everything it found:
+
+| Commit | What |
+|---|---|
+| `457ecb4` | Phase 1 — `PlacementPanel`: confidence gauge + evidence-split bar replacing binary LONG/SHORT badge |
+| `c410078` | Phase 2 — `FlowStatsStrip`: bar-by-bar Volume/Delta/RelStrength/CVD strip (starter+) |
+| `f2e3990` | Phase 3 — `FootprintChart` visual overhaul: absorption glow / sweep flash, continuous `imbalanceFill` ramp |
+| `653690b` | Phase 4 (scoped) — cross-pane price-level highlighting: footprint/DOM hover → order-book heatmap dashed line |
+| `312f44e` | **QA pass**: fixed 4 confirmed bugs from independent code review (see below) |
+
+**QA fixes in `312f44e`:**
+1. `FlowStatsStrip` — clear stale bars before fetching on instrument/timeframe switch
+2. `FootprintChart` — clear `hoverBar`/`hoverCell`/`onPriceHover` when cursor leaves the plotted area (price column / past last bar) — was leaving the cross-pane heatmap highlight stuck on a stale price
+3. `FootprintChart` — sweep-glow effect now keys off `lastSweep?.ts`/`?.absorbed` (stable primitives) instead of the object reference, which churned every ~1s recompute and restarted the redraw interval (stutter only — decay timing was always correct)
+4. `FootprintChart` — removed the redundant binary 3×/10× tooltip badge that could visually disagree with the new continuous `imbalanceFill` color ramp
+
+**Known dormant feature (pre-existing gap, not introduced this session):** the
+Phase 3 absorption-glow path is structurally inert — `market:absorption_detected`
+has no publisher anywhere in the Python workers (only a "future use" placeholder
+in `evaluator.py`), so `lastSweep.absorbed` is always `false`. Code degrades
+gracefully (the spike-fade flash still renders for raw sweeps); the slow
+sustained glow will activate once that detector ships. Worth a follow-up item
+when absorption-detection lands.
+
+All typecheck/build/lint clean, deployed via `pnpm web:deploy` (service
+active), pushed `653690b..312f44e` to `origin/main`.
+
+---
 
 Session 29 — **v0.1.0** chart-first UX pass (UI/UX review). Merged to `main`
 (`0a50566`), tagged `v0.1.0`, **deployed live and browser-verified** on
