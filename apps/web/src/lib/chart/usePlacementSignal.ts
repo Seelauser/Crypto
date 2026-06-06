@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { scorePlacement } from './placementEngine';
-import type { PlacementInputs, PlacementSignal } from './types';
+import type { PlacementDirection, PlacementInputs, PlacementSignal } from './types';
 
 const WS_URL = process.env.NEXT_PUBLIC_WS_URL ?? 'ws://localhost:4001';
 const SWEEP_WINDOW_MS = 30_000;
@@ -42,6 +42,27 @@ const MAX_HISTORY     = 50;
 const HISTORY_MAX_AGE = 60 * 60 * 1000; // 1h
 const CONF_JUMP_MIN   = 15;             // re-emit when confidence jumps ≥15pts in same direction
 
+// ── Direction stability ───────────────────────────────────────────────────
+// Raw per-tick scoring can flip direction rapidly when CVD oscillates near
+// zero (the engine derives long/short straight off `Math.sign(cvd)` — see
+// placementEngine.ts). At trade cadence that produced a visibly "flashing"
+// long ↔ short readout below the chart that users correctly didn't trust.
+//
+// Fix: only COMMIT a direction change once the new reading has been the
+// consistent candidate for MIN_FLIP_DWELL_MS. Confidence/strength/triggers
+// still update live every recompute — only the headline direction is
+// debounced, so the panel stops thrashing while staying responsive to real
+// regime changes (a genuine flip survives 8s of consistent readings; noise
+// doesn't).
+const MIN_FLIP_DWELL_MS = 8_000;
+
+// Throttle re-scoring itself: the order-flow WS can emit many ticks/sec,
+// and re-running the engine + a React state update on every single one is
+// wasted work that also amplifies the near-threshold jitter above. Trailing
+// edge throttle keeps the panel responsive (≤1 update/sec) without dropping
+// the latest reading.
+const RECOMPUTE_THROTTLE_MS = 1_000;
+
 /**
  * Live placement-signal hook. Opens its own WebSocket to the gateway (isolated
  * from the shared `useMarketSocket`), subscribes to the order-flow streams for
@@ -63,13 +84,26 @@ export function usePlacementSignal(instrument: string, enabled = true): Placemen
     funding: number | null;
     /** Signed delta_60s samples, oldest → newest, for delta_exhaustion. */
     recentDeltas: number[];
-  }>({ cvd: null, cvdPrev: null, imbalance: null, sweeps: [], lastAbsorbTs: 0, divergence: null, funding: null, recentDeltas: [] });
+    /** Last COMMITTED direction shown to the user (debounced — see MIN_FLIP_DWELL_MS). */
+    stableDirection: PlacementDirection;
+    /** Direction currently "auditioning" to replace stableDirection, plus when it first appeared. */
+    candidateDirection: PlacementDirection | null;
+    candidateSince: number;
+  }>({
+    cvd: null, cvdPrev: null, imbalance: null, sweeps: [], lastAbsorbTs: 0, divergence: null, funding: null,
+    recentDeltas: [], stableDirection: 'neutral', candidateDirection: null, candidateSince: 0,
+  });
 
   useEffect(() => {
     if (!enabled || !instrument || typeof window === 'undefined') return;
-    roll.current = { cvd: null, cvdPrev: null, imbalance: null, sweeps: [], lastAbsorbTs: 0, divergence: null, funding: null, recentDeltas: [] };
+    roll.current = {
+      cvd: null, cvdPrev: null, imbalance: null, sweeps: [], lastAbsorbTs: 0, divergence: null, funding: null,
+      recentDeltas: [], stableDirection: 'neutral', candidateDirection: null, candidateSince: 0,
+    };
     let closed = false;
     let ws: WebSocket | null = null;
+    let throttleHandle: ReturnType<typeof setTimeout> | null = null;
+    let throttlePending = false;
 
     const recompute = () => {
       const r = roll.current;
@@ -85,7 +119,30 @@ export function usePlacementSignal(instrument: string, enabled = true): Placemen
         recentDeltas: r.recentDeltas.length ? [...r.recentDeltas] : null,
         ts:           Date.now(),
       };
-      const signal = scorePlacement(inputs);
+      const rawSignal = scorePlacement(inputs);
+
+      // ── Debounce the headline direction (kills the long/short "flashing") ──
+      // The engine can legitimately recompute a different direction tick to
+      // tick (raw CVD sign flips near zero, divergence polls land mid-stream,
+      // etc). Only adopt a new direction once it's been the consistent
+      // candidate for MIN_FLIP_DWELL_MS; otherwise keep showing the last
+      // committed one. Confidence/strength/triggers pass through untouched.
+      const now = Date.now();
+      if (rawSignal.direction !== r.stableDirection) {
+        if (r.candidateDirection === rawSignal.direction) {
+          if (now - r.candidateSince >= MIN_FLIP_DWELL_MS) {
+            r.stableDirection = rawSignal.direction;
+            r.candidateDirection = null;
+          }
+        } else {
+          r.candidateDirection = rawSignal.direction;
+          r.candidateSince = now;
+        }
+      } else {
+        r.candidateDirection = null;
+      }
+      const signal: PlacementSignal = { ...rawSignal, direction: r.stableDirection };
+
       setState(s => {
         // Append to history when a NEW emitted signal is observed:
         //   1) crosses from no-emit → emit,
@@ -116,6 +173,18 @@ export function usePlacementSignal(instrument: string, enabled = true): Placemen
           divergence:     r.divergence,
         };
       });
+    };
+
+    // Trailing-edge throttle: collapse bursts of WS ticks into ≤1 recompute
+    // per RECOMPUTE_THROTTLE_MS while always running once more at the end of
+    // the burst so the latest reading is never dropped.
+    const requestRecompute = () => {
+      if (throttleHandle) { throttlePending = true; return; }
+      recompute();
+      throttleHandle = setTimeout(() => {
+        throttleHandle = null;
+        if (throttlePending) { throttlePending = false; requestRecompute(); }
+      }, RECOMPUTE_THROTTLE_MS);
     };
 
     // ── Divergence poll (the detector publishes every ~120s) ───────────────
@@ -199,12 +268,18 @@ export function usePlacementSignal(instrument: string, enabled = true): Placemen
           default:
             return;
         }
-        recompute();
+        requestRecompute();
       };
     };
     connect();
 
-    return () => { closed = true; clearInterval(divTimer); clearInterval(fundingTimer); ws?.close(); };
+    return () => {
+      closed = true;
+      clearInterval(divTimer);
+      clearInterval(fundingTimer);
+      if (throttleHandle) clearTimeout(throttleHandle);
+      ws?.close();
+    };
   }, [instrument, enabled]);
 
   return state;
