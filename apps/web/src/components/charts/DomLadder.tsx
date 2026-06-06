@@ -16,6 +16,14 @@ interface Props {
   instrument: string;
   tier: UserTier;
   height?: number;
+  /**
+   * Reports the price level under the cursor (or `null` on leave) so the
+   * order-book heatmap can mark the same level — Phase 4 (multi-pane
+   * linking): "what's resting at this price right now" (DOM) and "how has
+   * size built up here over the last minute" (heatmap) are two views of the
+   * same level; this keeps them visually anchored together.
+   */
+  onPriceHover?: (price: number | null) => void;
 }
 
 function generateMockDom(mid: number, levels = 20): DomLevel[] {
@@ -37,7 +45,7 @@ const BASE_PRICES: Record<string, number> = {
   AAPL: 180, NVDA: 500, ES: 5200, GC: 2000, EURUSD: 1.082,
 };
 
-export default function DomLadder({ instrument, tier, height = 400 }: Props) {
+export default function DomLadder({ instrument, tier, height = 400, onPriceHover }: Props) {
   const [showGate, setShowGate] = useState(false);
   const [dom, setDom] = useState<DomLevel[]>([]);
   const [mid, setMid] = useState(50000);
@@ -111,14 +119,14 @@ export default function DomLadder({ instrument, tier, height = 400 }: Props) {
         <span style={{ color: '#8a8f9b', textTransform: 'uppercase', letterSpacing: '0.08em' }}>DOM · {instrument}</span>
         <span style={{ color: '#22d3ee', fontFamily: 'JetBrains Mono, monospace' }}>{mid.toFixed(mid > 100 ? 1 : 5)}</span>
       </div>
-      <div style={{ flex: 1, overflow: 'auto' }}>
-        <DomContent dom={dom} maxSize={maxSize} mid={mid} tickSize={tickSize} />
+      <div style={{ flex: 1, overflow: 'auto' }} onMouseLeave={() => onPriceHover?.(null)}>
+        <DomContent dom={dom} maxSize={maxSize} mid={mid} tickSize={tickSize} onPriceHover={onPriceHover} />
       </div>
     </div>
   );
 }
 
-function DomContent({ dom, maxSize, mid, tickSize }: { dom: DomLevel[]; maxSize: number; mid: number; tickSize: number }) {
+function DomContent({ dom, maxSize, mid, tickSize, onPriceHover }: { dom: DomLevel[]; maxSize: number; mid: number; tickSize: number; onPriceHover?: (price: number | null) => void }) {
   return (
     <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 11 }}>
       {/* Headers */}
@@ -134,6 +142,7 @@ function DomContent({ dom, maxSize, mid, tickSize }: { dom: DomLevel[]; maxSize:
         return (
           <div
             key={i}
+            onMouseEnter={() => onPriceHover?.(level.price)}
             style={{
               position: 'relative',
               display: 'grid',

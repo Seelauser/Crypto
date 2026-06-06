@@ -35,6 +35,13 @@ interface Props {
    * the UI redesign; ATAS/Bookmap convention).
    */
   lastSweep?: { side: string; notionalUsd: number; ts: number; absorbed: boolean } | null;
+  /**
+   * Reports the price level under the cursor (or `null` on leave) so a
+   * sibling pane — the order-book heatmap — can mark the same level. Phase 4
+   * (multi-pane linking), scoped to the one cross-pane link that's actually
+   * actionable: "where does this footprint level sit in the live book?"
+   */
+  onPriceHover?: (price: number | null) => void;
 }
 
 /** Spike-fade duration for an un-absorbed sweep — quick flash, quick decay. */
@@ -122,7 +129,7 @@ function generateMockBars(basePrice: number, count = 12): FootprintBar[] {
   return bars;
 }
 
-export default function FootprintChart({ instrument, tier, height = 480, lastSweep }: Props) {
+export default function FootprintChart({ instrument, tier, height = 480, lastSweep, onPriceHover }: Props) {
   const [showGate, setShowGate] = useState(false);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [bars, setBars] = useState<FootprintBar[]>([]);
@@ -393,9 +400,10 @@ export default function FootprintChart({ instrument, tier, height = 480, lastSwe
               Math.abs(a.price - hoverPrice) < Math.abs(b.price - hoverPrice) ? a : b
             );
             setHoverCell(closest);
+            onPriceHover?.(closest.price);
           }
         }}
-        onMouseLeave={() => { setHoverBar(null); setHoverCell(null); }}
+        onMouseLeave={() => { setHoverBar(null); setHoverCell(null); onPriceHover?.(null); }}
       />
     </div>
   );

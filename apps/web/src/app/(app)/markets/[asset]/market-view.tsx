@@ -366,6 +366,18 @@ export default function MarketView({ asset, tier }: Props) {
     setHover({ signal, x, y });
   }, []);
 
+  // ─── Cross-pane price highlight (Phase 4 — multi-pane linking, scoped) ───
+  // The footprint and DOM ladder both report the price level under the
+  // cursor; the order-book heatmap (always visible in the sidebar) marks
+  // that same level. Lets the reader carry "this level" between "what
+  // happened here" (footprint), "what's resting here now" (DOM), and "how
+  // has size built up here over the last minute" (heatmap) — instead of
+  // three disconnected views of the same instrument.
+  const [hoveredPrice, setHoveredPrice] = useState<number | null>(null);
+  // Clear a stale highlight when the reader switches instruments or away from
+  // a view that reports hover (candles view doesn't emit price-hover at all).
+  useEffect(() => { setHoveredPrice(null); }, [selectedInstrument, layers.footprint, layers.orderbook]);
+
   // Stable mock data per instrument (seeded, consistent across renders)
   const mockDataMap = useMemo<Map<string, MockInstrumentData>>(() => {
     const map = new Map<string, MockInstrumentData>();
@@ -630,6 +642,7 @@ export default function MarketView({ asset, tier }: Props) {
               instrument={selectedInstrument}
               height={180}
               tier={tier}
+              highlightPrice={hoveredPrice}
             />
           </div>
         </div>
@@ -674,6 +687,7 @@ export default function MarketView({ asset, tier }: Props) {
               placementHistory={layers.placement ? placementHistory : []}
               onMarkerHover={layers.placement ? handleMarkerHover : undefined}
               lastSweep={placementState.lastSweep}
+              onPriceHover={setHoveredPrice}
             />
             <SignalTooltip
               signal={hover?.signal ?? null}
@@ -816,6 +830,7 @@ function ChartPaneAutoHeight({
   placementHistory,
   onMarkerHover,
   lastSweep,
+  onPriceHover,
 }: {
   instrument: string;
   tier: 'free' | 'starter' | 'pro';
@@ -827,6 +842,7 @@ function ChartPaneAutoHeight({
   placementHistory?: PlacementSignal[];
   onMarkerHover?: (signal: PlacementSignal | null, x: number, y: number) => void;
   lastSweep?: { side: string; notionalUsd: number; ts: number; absorbed: boolean } | null;
+  onPriceHover?: (price: number | null) => void;
 }) {
   const [chartHeight, setChartHeight] = useState(420);
 
@@ -857,10 +873,10 @@ function ChartPaneAutoHeight({
   }, [containerRef]);
 
   if (primaryView === 'footprint') {
-    return <FootprintChart instrument={instrument} tier={tier} height={chartHeight} lastSweep={lastSweep} />;
+    return <FootprintChart instrument={instrument} tier={tier} height={chartHeight} lastSweep={lastSweep} onPriceHover={onPriceHover} />;
   }
   if (primaryView === 'depth') {
-    return <DomLadder instrument={instrument} tier={tier} height={chartHeight} />;
+    return <DomLadder instrument={instrument} tier={tier} height={chartHeight} onPriceHover={onPriceHover} />;
   }
 
   return (

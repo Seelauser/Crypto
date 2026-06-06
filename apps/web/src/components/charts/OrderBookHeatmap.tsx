@@ -28,6 +28,17 @@ interface Props {
   instrument: string;
   height?: number;
   tier: 'free' | 'starter' | 'pro';
+  /**
+   * Price level the reader is currently inspecting in a sibling pane
+   * (footprint cell or DOM ladder row — see market-view's lifted
+   * `hoveredPrice`). Drawn as a bright marker line so the same level stays
+   * visible as you move between "what happened here" (footprint) and
+   * "what's resting here right now" (heatmap) — Phase 4 of the order-flow
+   * UI redesign, scoped down from full crosshair sync (different rendering
+   * stacks made that risky) to the one link that matters most: "this price,
+   * across views."
+   */
+  highlightPrice?: number | null;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -79,11 +90,19 @@ export default function OrderBookHeatmap({
   instrument,
   height = 220,
   tier,
+  highlightPrice,
 }: Props) {
   const canvasRef       = useRef<HTMLCanvasElement>(null);
   const cellsRef        = useRef<HeatCell[]>([]);
   const queueRef        = useRef<OrderBook[]>([]);
   const rafRef          = useRef<number>(0);
+  // Mirrors the `highlightPrice` prop into a ref so the stable `renderFrame`
+  // callback (deliberately memoized with no deps — see its definition) can
+  // read the latest value each frame without itself needing to change
+  // identity, which would otherwise cascade into re-subscribing the render
+  // interval on every hover move.
+  const highlightPriceRef = useRef<number | null>(null);
+  useEffect(() => { highlightPriceRef.current = highlightPrice ?? null; }, [highlightPrice]);
   const intervalRef     = useRef<ReturnType<typeof setInterval> | null>(null);
   const lastMidRef      = useRef<number>(0);
   const [dimensions, setDimensions] = useState({ w: 800, h: height });
@@ -260,6 +279,32 @@ export default function OrderBookHeatmap({
       ctx.lineTo(W, midY);
       ctx.stroke();
       ctx.setLineDash([]);
+    }
+
+    // ── Cross-pane price highlight ───────────────────────────────────────────
+    // The level the reader is currently inspecting in the footprint or DOM
+    // ladder, carried over so "this level mattered a moment ago" (footprint)
+    // and "this is what's resting there right now" (heatmap) read as the
+    // same place rather than two disconnected views.
+    const hp = highlightPriceRef.current;
+    if (hp != null && lastMidRef.current > 0) {
+      const idx = priceToLevel(hp, lastMidRef.current);
+      if (idx >= 0) {
+        const hy = (PRICE_LEVELS - 1 - idx) * cellH + cellH / 2;
+        ctx.strokeStyle = '#fbbf24';
+        ctx.lineWidth = 1.5;
+        ctx.setLineDash([6, 3]);
+        ctx.beginPath();
+        ctx.moveTo(0, hy);
+        ctx.lineTo(W, hy);
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        ctx.fillStyle = '#fbbf24';
+        ctx.font = 'bold 9px JetBrains Mono, monospace';
+        ctx.textAlign = 'right';
+        ctx.fillText(hp.toFixed(hp > 100 ? 1 : 5), W - 4, hy - 3);
+      }
     }
 
     // ── X-axis time labels ───────────────────────────────────────────────────
