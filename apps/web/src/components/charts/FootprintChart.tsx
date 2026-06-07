@@ -19,6 +19,8 @@ interface FootprintBar {
   cells: FootprintCell[];
   delta: number;
   totalVol: number;
+  /** Cumulative CVD at the close of this bar (running total across all loaded bars). */
+  cvd: number;
 }
 
 interface Props {
@@ -123,7 +125,7 @@ function generateMockBars(basePrice: number, count = 12): FootprintBar[] {
     }
 
     _cvd += delta;
-    bars.push({ ts: now - (count - i) * 300_000, open, close, cells, delta, totalVol });
+    bars.push({ ts: now - (count - i) * 300_000, open, close, cells, delta, totalVol, cvd: _cvd });
     price = close;
   }
   return bars;
@@ -173,17 +175,22 @@ export default function FootprintChart({ instrument, tier, height = 480, lastSwe
         const json = await res.json();
         if (cancelled) return;
         // Map API FootprintBar → local FootprintBar shape
+        let runningCvd = 0;
         const mapped: FootprintBar[] = (json.bars ?? []).map((b: {
           ts: number; open: number; close: number; delta: number; volume: number;
           levels: Array<{ price: number; bidVol: number; askVol: number; imbalance: number }>;
-        }) => ({
-          ts: b.ts, open: b.open, close: b.close, delta: b.delta, totalVol: b.volume,
-          cells: b.levels.map(l => ({
-            price: l.price, bidVol: l.bidVol, askVol: l.askVol,
-            ratio: l.imbalance,
-            highlight: l.imbalance >= 10 ? '10x' as const : l.imbalance >= 3 ? '3x' as const : null,
-          })),
-        }));
+        }) => {
+          runningCvd += b.delta;
+          return {
+            ts: b.ts, open: b.open, close: b.close, delta: b.delta, totalVol: b.volume,
+            cvd: runningCvd,
+            cells: b.levels.map(l => ({
+              price: l.price, bidVol: l.bidVol, askVol: l.askVol,
+              ratio: l.imbalance,
+              highlight: l.imbalance >= 10 ? '10x' as const : l.imbalance >= 3 ? '3x' as const : null,
+            })),
+          };
+        });
         setBars(mapped.length > 0 ? mapped : generateMockBars(basePrice));
       } catch {
         if (!cancelled) setBars(generateMockBars(basePrice));
@@ -281,6 +288,15 @@ export default function FootprintChart({ instrument, tier, height = 480, lastSwe
           ctx.fillText(cell.price.toFixed(basePrice > 100 ? 0 : 4), PRICE_COL_W - 4, y + 11);
         }
       });
+
+      // CVD row — running cumulative delta at the close of this bar.
+      // Draws just above the per-bar delta row so both stay readable.
+      const fmtVol = (n: number) => Math.abs(n) >= 1000 ? `${(n / 1000).toFixed(0)}K` : n.toFixed(0);
+      const cvdText = `∑${bar.cvd >= 0 ? '+' : ''}${fmtVol(bar.cvd)}`;
+      ctx.fillStyle = bar.cvd >= 0 ? `${COLORS.buy}aa` : `${COLORS.sell}aa`;
+      ctx.font = '8px JetBrains Mono, monospace';
+      ctx.textAlign = 'center';
+      ctx.fillText(cvdText, x + BAR_W / 2, H - 14);
 
       // Delta at bottom of bar (above the very bottom edge)
       const deltaText = `Δ${bar.delta > 0 ? '+' : ''}${bar.delta > 1000 ? `${(bar.delta / 1000).toFixed(0)}K` : bar.delta.toFixed(0)}`;

@@ -11,6 +11,7 @@ import TapeNarrator from '@/components/charts/TapeNarrator';
 import DeepAnalysisPanel from '@/components/charts/DeepAnalysisPanel';
 import CorrelationPanel from '@/components/charts/CorrelationPanel';
 import PlacementPanel from '@/components/chart/PlacementPanel';
+import MultiTfCvdWidget from '@/components/chart/MultiTfCvdWidget';
 import FlowStatsStrip from '@/components/chart/FlowStatsStrip';
 import ChartToolbar, { DEFAULT_LAYERS, type ChartLayerState } from '@/components/chart/ChartToolbar';
 import SignalTooltip from '@/components/chart/SignalTooltip';
@@ -770,7 +771,14 @@ export default function MarketView({ asset, tier }: Props) {
               }}
             >
               {bottomPanel === 'placement' && (
-                <PlacementPanel instrument={selectedInstrument} tier={tier} state={placementState} />
+                <div style={{ display: 'flex', height: '100%', gap: 0, overflow: 'hidden' }}>
+                  <div style={{ flex: 1, overflowY: 'auto' }}>
+                    <PlacementPanel instrument={selectedInstrument} tier={tier} state={placementState} />
+                  </div>
+                  <div style={{ width: 220, flexShrink: 0, padding: '12px 10px', borderLeft: '1px solid #1f2128', overflowY: 'auto' }}>
+                    <MultiTfCvdWidget instrument={selectedInstrument} tier={tier} />
+                  </div>
+                </div>
               )}
 
               {bottomPanel === 'tape' && (

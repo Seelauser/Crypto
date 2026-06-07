@@ -193,40 +193,86 @@ export default function TapePanel({ instrument, tier, minNotionalUsd }: Props) {
   const autoScrollRef   = useRef(true);
 
   // ── WebSocket subscription ──────────────────────────────────────────────
+  // Subscribe to raw ticks AND the sweep channel — sweeps come through
+  // market:sweep_detected (already flowing for the Placement panel) and are
+  // the most reliable source of large-print events. Raw ticks provide the
+  // full tape when the ingest workers are publishing.
   const { lastMessage, connected } = useMarketSocket(
     [instrument],
-    ['market:ticks'],
+    ['market:ticks', 'market:sweep_detected'],
   );
 
-  // ── Process incoming tick messages ──────────────────────────────────────
+  // ── Process incoming messages ───────────────────────────────────────────
   useEffect(() => {
-    if (!lastMessage || lastMessage.type !== 'tick') return;
-    const tick = lastMessage.data as Tick;
-    if (!tick || tick.instrument !== instrument) return;
+    if (!lastMessage) return;
 
-    const notional = tick.price * tick.size;
-    if (notional < threshold) return;
+    // ── Raw tick path ────────────────────────────────────────────────────
+    // The WS gateway serialises market:ticks → type:'market_ticks' (colons
+    // become underscores). Legacy 'tick' kept for back-compat.
+    if (lastMessage.type === 'market_ticks' || lastMessage.type === 'tick') {
+      const tick = lastMessage.data as Tick;
+      if (!tick || tick.instrument !== instrument) return;
 
-    // Heuristic sweep detection: large print > 3× threshold
-    const isSweep = notional >= threshold * 3;
+      const notional = tick.price * tick.size;
+      if (notional < threshold) return;
 
-    const newRow: PrintRow = {
-      id:          makeId(),
-      ts:          tick.ts,
-      side:        tick.side,
-      size:        tick.size,
-      price:       tick.price,
-      exchange:    tick.exchange,
-      notionalUsd: notional,
-      isSweep,
-      flashKey:    rowCounter,
-    };
+      // Heuristic sweep detection: large print > 3× threshold
+      const isSweep = notional >= threshold * 3;
 
-    setRows(prev => {
-      const next = [newRow, ...prev];
-      if (next.length > MAX_ROWS) return next.slice(0, MAX_ROWS);
-      return next;
-    });
+      const newRow: PrintRow = {
+        id:          makeId(),
+        ts:          tick.ts,
+        side:        tick.side,
+        size:        tick.size,
+        price:       tick.price,
+        exchange:    tick.exchange,
+        notionalUsd: notional,
+        isSweep,
+        flashKey:    rowCounter,
+      };
+
+      setRows(prev => {
+        const next = [newRow, ...prev];
+        if (next.length > MAX_ROWS) return next.slice(0, MAX_ROWS);
+        return next;
+      });
+      return;
+    }
+
+    // ── Sweep path ───────────────────────────────────────────────────────
+    // market:sweep_detected events are emitted by the Python streaming
+    // worker and already power the Placement panel. Route them into the
+    // tape as guaranteed sweep rows so the tape is never empty when the
+    // Placement panel shows last-sweep data.
+    if (lastMessage.type === 'market_sweep_detected') {
+      const sw = lastMessage.data as {
+        instrument?: string; side?: string;
+        price?: number; size?: number; notional_usd?: number;
+        exchange?: string; ts?: number;
+      };
+      if (!sw || sw.instrument !== instrument) return;
+
+      const notional = sw.notional_usd ?? (sw.price ?? 0) * (sw.size ?? 0);
+      if (notional < threshold) return;
+
+      const newRow: PrintRow = {
+        id:          makeId(),
+        ts:          sw.ts ?? Date.now(),
+        side:        sw.side === 'sell' ? 'sell' : sw.side === 'buy' ? 'buy' : 'unknown',
+        size:        sw.size ?? 0,
+        price:       sw.price ?? 0,
+        exchange:    sw.exchange ?? '',
+        notionalUsd: notional,
+        isSweep:     true,  // sweep channel = always a sweep-scale print
+        flashKey:    rowCounter,
+      };
+
+      setRows(prev => {
+        const next = [newRow, ...prev];
+        if (next.length > MAX_ROWS) return next.slice(0, MAX_ROWS);
+        return next;
+      });
+    }
   }, [lastMessage, instrument, threshold]);
 
   // ── Auto-scroll to top (newest) unless user has scrolled away ─────────

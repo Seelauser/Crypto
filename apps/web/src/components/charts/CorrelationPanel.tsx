@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { RefreshCw, Loader2, GitCompare } from 'lucide-react';
 import type { UserTier } from '@orderflow/types';
 import { api, ApiError } from '@/lib/api';
@@ -114,6 +114,16 @@ export default function CorrelationPanel({
     } finally {
       setLoading(false);
     }
+  }, [instrumentA, instrumentB]);
+
+  // Auto-load on mount and whenever the instrument pair changes.
+  // Previously the panel required a manual "Refresh" click before showing
+  // any data — the analyst correctly flagged this as a UX gap.
+  useEffect(() => {
+    if (instrumentA !== instrumentB) {
+      void handleFetch();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [instrumentA, instrumentB]);
 
   const selectStyle: React.CSSProperties = {

@@ -118,7 +118,9 @@ export default function OrderBookHeatmap({
   // ── Ingest incoming orderbook messages ────────────────────────────────────
   useEffect(() => {
     if (!isPremium || !lastMessage) return;
-    if (lastMessage.type !== 'orderbook') return;
+    // Gateway serialises market:orderbook → type:'market_orderbook'.
+    // Accept both so the heatmap works regardless of client WS version.
+    if (lastMessage.type !== 'orderbook' && lastMessage.type !== 'market_orderbook') return;
     const book = lastMessage.data as OrderBook;
     if (book?.instrument !== instrument) return;
 

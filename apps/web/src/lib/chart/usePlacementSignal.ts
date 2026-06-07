@@ -19,6 +19,21 @@ function instrumentMatches(streamInstr: string | undefined, target: string): boo
   return base(streamInstr) === base(target);
 }
 
+export interface SweepEntry {
+  side:        string;
+  notionalUsd: number;
+  ts:          number;
+  absorbed:    boolean;
+}
+
+export interface ImbalanceEntry {
+  ratio:    number;
+  dominant: 'bid' | 'ask';
+  ts:       number;
+  /** True when ratio exceeded IMBALANCE_SPIKE_THRESHOLD — used for the spike log. */
+  spiked:   boolean;
+}
+
 export interface PlacementState {
   signal:         PlacementSignal | null;
   /**
@@ -30,17 +45,44 @@ export interface PlacementState {
   connected:      boolean;
   cvd:            number | null;
   imbalanceRatio: number | null;
-  lastSweep:      { side: string; notionalUsd: number; ts: number; absorbed: boolean } | null;
+  /**
+   * Rolling 30-sample imbalance history (newest last). Used for the sparkline
+   * in PlacementPanel and for the spike-event log.
+   */
+  imbalanceHistory: ImbalanceEntry[];
+  lastSweep:      SweepEntry | null;
+  /**
+   * Last 10 sweeps within the session window — powers the sweep-log table
+   * in PlacementPanel. The analyst reported that a single "last sweep"
+   * number is anecdotal; a sequence reveals structural intent.
+   */
+  sweepHistory:   SweepEntry[];
   divergence:     { kind: 'bullish' | 'bearish'; strength?: number } | null;
+  /**
+   * Open interest from the derivatives feed (raw value — USD notional or
+   * contract units depending on exchange). Null when the derivatives
+   * publisher is not running.
+   */
+  oi:             number | null;
+  /**
+   * Regime string from the HMM classifier (e.g. "trending_bull"). Null when
+   * the regime publisher hasn't classified this instrument yet.
+   */
+  regime:         string | null;
 }
 
 const EMPTY: PlacementState = {
-  signal: null, history: [], connected: false, cvd: null, imbalanceRatio: null, lastSweep: null, divergence: null,
+  signal: null, history: [], connected: false, cvd: null,
+  imbalanceRatio: null, imbalanceHistory: [],
+  lastSweep: null, sweepHistory: [],
+  divergence: null, oi: null, regime: null,
 };
 
-const MAX_HISTORY     = 50;
-const HISTORY_MAX_AGE = 60 * 60 * 1000; // 1h
-const CONF_JUMP_MIN   = 15;             // re-emit when confidence jumps ≥15pts in same direction
+const MAX_HISTORY           = 50;
+const HISTORY_MAX_AGE       = 60 * 60 * 1000; // 1h
+const CONF_JUMP_MIN         = 15;              // re-emit when confidence jumps ≥15pts in same direction
+const IMBALANCE_HISTORY_MAX = 30;              // sparkline ring buffer
+const IMBALANCE_SPIKE_THRESHOLD = 10;          // ×10 ratio = spike event
 
 // ── Direction stability ───────────────────────────────────────────────────
 // Raw per-tick scoring can flip direction rapidly when CVD oscillates near
@@ -78,10 +120,13 @@ export function usePlacementSignal(instrument: string, enabled = true): Placemen
     cvd: number | null;
     cvdPrev: number | null;
     imbalance: { ratio: number; dominant: 'bid' | 'ask' } | null;
+    imbalanceHistory: ImbalanceEntry[];
     sweeps: { side: 'buy' | 'sell'; notionalUsd: number; ts: number; absorbed: boolean }[];
     lastAbsorbTs: number;
     divergence: { kind: 'bullish' | 'bearish'; strength?: number } | null;
     funding: number | null;
+    oi: number | null;
+    regime: string | null;
     /** Signed delta_60s samples, oldest → newest, for delta_exhaustion. */
     recentDeltas: number[];
     /** Last COMMITTED direction shown to the user (debounced — see MIN_FLIP_DWELL_MS). */
@@ -90,14 +135,16 @@ export function usePlacementSignal(instrument: string, enabled = true): Placemen
     candidateDirection: PlacementDirection | null;
     candidateSince: number;
   }>({
-    cvd: null, cvdPrev: null, imbalance: null, sweeps: [], lastAbsorbTs: 0, divergence: null, funding: null,
+    cvd: null, cvdPrev: null, imbalance: null, imbalanceHistory: [],
+    sweeps: [], lastAbsorbTs: 0, divergence: null, funding: null, oi: null, regime: null,
     recentDeltas: [], stableDirection: 'neutral', candidateDirection: null, candidateSince: 0,
   });
 
   useEffect(() => {
     if (!enabled || !instrument || typeof window === 'undefined') return;
     roll.current = {
-      cvd: null, cvdPrev: null, imbalance: null, sweeps: [], lastAbsorbTs: 0, divergence: null, funding: null,
+      cvd: null, cvdPrev: null, imbalance: null, imbalanceHistory: [],
+      sweeps: [], lastAbsorbTs: 0, divergence: null, funding: null, oi: null, regime: null,
       recentDeltas: [], stableDirection: 'neutral', candidateDirection: null, candidateSince: 0,
     };
     let closed = false;
@@ -117,6 +164,7 @@ export function usePlacementSignal(instrument: string, enabled = true): Placemen
         sweep:        recentSweep ? { side: recentSweep.side, absorbed: recentSweep.absorbed } : null,
         funding:      r.funding,
         recentDeltas: r.recentDeltas.length ? [...r.recentDeltas] : null,
+        regime:       r.regime,
         ts:           Date.now(),
       };
       const rawSignal = scorePlacement(inputs);
@@ -163,14 +211,24 @@ export function usePlacementSignal(instrument: string, enabled = true): Placemen
         // Drop entries older than 1h and cap at MAX_HISTORY.
         const cutoff = Date.now() - HISTORY_MAX_AGE;
         history = history.filter(h => h.ts >= cutoff).slice(-MAX_HISTORY);
+        const now2 = Date.now();
+        const activeSweeps = r.sweeps.filter(s => now2 - s.ts < SWEEP_WINDOW_MS);
         return {
           ...s,
           signal,
           history,
-          cvd:            r.cvd,
-          imbalanceRatio: r.imbalance?.ratio ?? null,
-          lastSweep:      recentSweep ? { side: recentSweep.side, notionalUsd: recentSweep.notionalUsd, ts: recentSweep.ts, absorbed: recentSweep.absorbed } : null,
-          divergence:     r.divergence,
+          cvd:              r.cvd,
+          imbalanceRatio:   r.imbalance?.ratio ?? null,
+          imbalanceHistory: [...r.imbalanceHistory],
+          lastSweep:        recentSweep
+                              ? { side: recentSweep.side, notionalUsd: recentSweep.notionalUsd, ts: recentSweep.ts, absorbed: recentSweep.absorbed }
+                              : null,
+          sweepHistory:     activeSweeps.slice(-10).map(sw => ({
+                              side: sw.side, notionalUsd: sw.notionalUsd, ts: sw.ts, absorbed: sw.absorbed,
+                            })),
+          divergence:       r.divergence,
+          oi:               r.oi,
+          regime:           r.regime,
         };
       });
     };
@@ -202,18 +260,46 @@ export function usePlacementSignal(instrument: string, enabled = true): Placemen
     void fetchDivergence();
     const divTimer = setInterval(fetchDivergence, 60_000);
 
-    // ── Funding poll (the derivatives publisher refreshes every ~30s) ──────
+    // ── Funding + OI poll (the derivatives publisher refreshes every ~30s) ──
     const fetchFunding = async () => {
       try {
         const res = await fetch(`/api/markets/${encodeURIComponent(instrument)}/derivatives`);
         if (!res.ok) return;
-        const { current } = await res.json() as { current: { funding_rate?: number } | null };
-        roll.current.funding = current && typeof current.funding_rate === 'number' ? current.funding_rate : null;
+        const { current } = await res.json() as {
+          current: { funding_rate?: number; open_interest?: number } | null
+        };
+        if (current) {
+          roll.current.funding = typeof current.funding_rate   === 'number' ? current.funding_rate   : null;
+          roll.current.oi      = typeof current.open_interest  === 'number' ? current.open_interest  : null;
+        }
         recompute();
       } catch { /* ignore */ }
     };
     void fetchFunding();
     const fundingTimer = setInterval(fetchFunding, 30_000);
+
+    // ── Regime poll (the HMM publisher re-classifies every ~60s) ────────────
+    const fetchRegime = async () => {
+      try {
+        const res = await fetch('/api/market/regime');
+        if (!res.ok) return;
+        const data = await res.json() as Record<string, string>;
+        // Map instrument to asset class. The regime publisher currently
+        // only covers crypto; extend this when other publishers ship.
+        const assetClass =
+          /^(BTC|ETH|SOL|BNB|XRP|DOGE|ADA|AVAX|DOT|LINK)/i.test(instrument)
+            ? 'crypto'
+            : /^(EUR|GBP|JPY|AUD|CAD|CHF)/i.test(instrument)
+            ? 'forex'
+            : /^(ES|NQ|RTY|YM)/i.test(instrument)
+            ? 'futures'
+            : 'stocks';
+        roll.current.regime = data[assetClass] ?? null;
+        recompute();
+      } catch { /* ignore */ }
+    };
+    void fetchRegime();
+    const regimeTimer = setInterval(fetchRegime, 60_000);
 
     // ── Live order-flow WebSocket ──────────────────────────────────────────
     const connect = () => {
@@ -249,7 +335,18 @@ export function usePlacementSignal(instrument: string, enabled = true): Placemen
             break;
           case 'market_imbalance_update': {
             const ratio = d.imbalance_ratio;
-            r.imbalance = typeof ratio === 'number' ? { ratio, dominant: ratio >= 1 ? 'bid' : 'ask' } : null;
+            if (typeof ratio === 'number') {
+              const dominant: 'bid' | 'ask' = ratio >= 1 ? 'bid' : 'ask';
+              r.imbalance = { ratio, dominant };
+              // Append to ring buffer (cap at IMBALANCE_HISTORY_MAX)
+              r.imbalanceHistory.push({
+                ratio, dominant, ts: Date.now(),
+                spiked: ratio >= IMBALANCE_SPIKE_THRESHOLD,
+              });
+              if (r.imbalanceHistory.length > IMBALANCE_HISTORY_MAX) r.imbalanceHistory.shift();
+            } else {
+              r.imbalance = null;
+            }
             break;
           }
           case 'market_absorption_detected':
@@ -277,6 +374,7 @@ export function usePlacementSignal(instrument: string, enabled = true): Placemen
       closed = true;
       clearInterval(divTimer);
       clearInterval(fundingTimer);
+      clearInterval(regimeTimer);
       if (throttleHandle) clearTimeout(throttleHandle);
       ws?.close();
     };

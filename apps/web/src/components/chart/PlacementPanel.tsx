@@ -2,30 +2,74 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { usePlacementSignal, type PlacementState } from '@/lib/chart/usePlacementSignal';
-import { EMIT_THRESHOLD } from '@/lib/chart/types';
+import { EMIT_THRESHOLD, TRIGGER_WEIGHTS, MAX_WEIGHT_SUM } from '@/lib/chart/types';
 
 const C = {
-  long:  '#22d3ee',
-  short: '#f97366',
+  long:    '#22d3ee',
+  short:   '#f97366',
   neutral: '#5a5f6a',
-  ink:   '#e6e8ee',
-  dim:   '#8a8f9b',
-  panel: '#13141a',
-  border:'#1f2128',
-  bg:    '#0a0a0b',
-  ok:    '#22c55e',
-  warn:  '#fbbf24',
+  ink:     '#e6e8ee',
+  dim:     '#8a8f9b',
+  panel:   '#13141a',
+  border:  '#1f2128',
+  bg:      '#0a0a0b',
+  ok:      '#22c55e',
+  warn:    '#fbbf24',
 } as const;
 const mono = { fontFamily: 'JetBrains Mono, monospace' } as const;
 
 const fmt = (n: number | null, d = 0) =>
   n == null ? '—' : n.toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d });
 
+function fmtCompact(n: number): string {
+  if (Math.abs(n) >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (Math.abs(n) >= 1_000)     return `${(n / 1_000).toFixed(0)}K`;
+  return n.toFixed(0);
+}
+
 function dirColor(dir: string) {
   return dir === 'long' ? C.long : dir === 'short' ? C.short : C.neutral;
 }
 function dirArrow(dir: string) {
   return dir === 'long' ? '▲' : dir === 'short' ? '▼' : '—';
+}
+
+// ── Inline sparkline for imbalance history ─────────────────────────────────────
+// 30 samples rendered as a tiny SVG path so no chart library is needed.
+function ImbalanceSparkline({ history }: { history: { ratio: number; spiked: boolean }[] }) {
+  if (history.length < 2) return null;
+  const W = 100, H = 24;
+  const ratios = history.map(h => h.ratio);
+  const max = Math.max(...ratios, 5);
+  const pts = ratios.map((r, i) => {
+    const x = (i / (ratios.length - 1)) * W;
+    const y = H - (r / max) * H;
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  });
+  const last = history[history.length - 1];
+  const dotColor = last.spiked ? C.warn : last.ratio >= 1 ? C.long : C.short;
+  const lx = parseFloat(pts[pts.length - 1].split(',')[0]);
+  const ly = parseFloat(pts[pts.length - 1].split(',')[1]);
+  return (
+    <svg width={W} height={H} style={{ display: 'block', overflow: 'visible' }}>
+      <polyline
+        points={pts.join(' ')}
+        fill="none"
+        stroke={C.dim}
+        strokeWidth="1"
+        strokeLinejoin="round"
+      />
+      {/* Spike markers */}
+      {history.map((h, i) => {
+        if (!h.spiked) return null;
+        const x = (i / (ratios.length - 1)) * W;
+        const y = H - (h.ratio / max) * H;
+        return <circle key={i} cx={x} cy={y} r={2} fill={C.warn} />;
+      })}
+      {/* Live dot */}
+      <circle cx={lx} cy={ly} r={2.5} fill={dotColor} />
+    </svg>
+  );
 }
 
 export default function PlacementPanel({
@@ -41,18 +85,16 @@ export default function PlacementPanel({
   state?: PlacementState;
 }) {
   const isPaid = tier !== 'free';
-  // Only run the internal hook when no external state is supplied (legacy
-  // usages, e.g. unit tests). Hooks must be unconditional, so we always call
-  // it — but with enabled=false when external state covers us.
   const internalState = usePlacementSignal(instrument, isPaid && !externalState);
   const st = externalState ?? internalState;
 
   const [explain, setExplain] = useState<{ text: string; ai: boolean } | null>(null);
   const [explaining, setExplaining] = useState(false);
+  const [showScoreInfo, setShowScoreInfo] = useState(false);
+
   const sig = st.signal;
   const emitted = sig != null && sig.strength > 0;
 
-  // Reset the explanation when the instrument or direction changes.
   useEffect(() => { setExplain(null); }, [instrument, sig?.direction]);
 
   const handleExplain = useCallback(async () => {
@@ -98,15 +140,11 @@ export default function PlacementPanel({
     );
   }
 
-  const dir = sig?.direction ?? 'neutral';
+  const dir  = sig?.direction ?? 'neutral';
   const conf = sig?.confidence ?? 0;
 
-  // ── Evidence split: sum trigger weights by lean, independent of the ──────
-  // engine's resolved `direction`. This is what actually renders — a bar
-  // showing how the live evidence splits, rather than a single collapsed
-  // long/short call. Two readers looking at the same triggers can form their
-  // own view; the panel shows its work instead of asking for trust.
-  const triggers = sig?.triggers ?? [];
+  // ── Evidence split ─────────────────────────────────────────────────────────
+  const triggers     = sig?.triggers ?? [];
   const longWeight    = triggers.filter(t => t.lean === 'long').reduce((s, t) => s + t.weight, 0);
   const shortWeight   = triggers.filter(t => t.lean === 'short').reduce((s, t) => s + t.weight, 0);
   const neutralWeight = triggers.filter(t => t.lean === 'neutral').reduce((s, t) => s + t.weight, 0);
@@ -114,6 +152,18 @@ export default function PlacementPanel({
   const longPct    = evidenceTotal > 0 ? (longWeight / evidenceTotal) * 100 : 0;
   const shortPct   = evidenceTotal > 0 ? (shortWeight / evidenceTotal) * 100 : 0;
   const neutralPct = evidenceTotal > 0 ? 100 - longPct - shortPct : 100;
+
+  // ── Imbalance history ──────────────────────────────────────────────────────
+  const imbHistory  = st.imbalanceHistory;
+  const spikeEvents = imbHistory.filter(h => h.spiked);
+  const sessionPeak = imbHistory.length > 0
+    ? imbHistory.reduce((m, h) => h.ratio > m.ratio ? h : m)
+    : null;
+
+  // ── Sweep log ─────────────────────────────────────────────────────────────
+  const sweepLog = st.sweepHistory;
+  const buySweeps  = sweepLog.filter(s => s.side === 'buy').length;
+  const sellSweeps = sweepLog.filter(s => s.side === 'sell').length;
 
   return (
     <div style={{ padding: '12px 14px', height: '100%', overflowY: 'auto', boxSizing: 'border-box' }}>
@@ -126,8 +176,7 @@ export default function PlacementPanel({
         </div>
       </div>
 
-      {/* Confidence read — gauge first, directional call second. The call is
-          a summary of the evidence below it, not a headline to trust blindly. */}
+      {/* Confidence read */}
       <div style={{ marginBottom: 6 }}>
         <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 6 }}>
           <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
@@ -142,28 +191,52 @@ export default function PlacementPanel({
             {conf}%
           </span>
         </div>
-        {/* Confidence gauge — segmented at the strength-bucket boundaries
-            (EMIT_THRESHOLD/50/70) so the reader sees where this read sits
-            on the engine's own scale, not just a raw percentage. */}
-        <div style={{ position: 'relative', height: 8, background: C.bg, borderRadius: 4, overflow: 'hidden' }}>
+        {/* Confidence gauge with threshold markers */}
+        <div
+          style={{ position: 'relative', height: 8, background: C.bg, borderRadius: 4, overflow: 'hidden', cursor: 'pointer' }}
+          onClick={() => setShowScoreInfo(v => !v)}
+          title="Click to see scoring formula"
+        >
           <div style={{ width: `${conf}%`, height: '100%', background: emitted ? dirColor(dir) : C.neutral, transition: 'width 400ms ease' }} />
           {[EMIT_THRESHOLD, 50, 70].map(mark => (
-            <div key={mark} title={`${mark}% strength threshold`}
+            <div key={mark} title={`${mark}% threshold`}
               style={{ position: 'absolute', left: `${mark}%`, top: 0, bottom: 0, width: 1, background: C.bg, opacity: 0.6 }} />
           ))}
         </div>
+
+        {/* ── Score formula tooltip ─── */}
+        {showScoreInfo && (
+          <div style={{
+            marginTop: 8, background: C.panel, border: `1px solid ${C.border}`,
+            borderRadius: 6, padding: '10px 12px', fontSize: 11,
+          }}>
+            <div style={{ color: C.warn, fontWeight: 700, marginBottom: 6, ...mono }}>
+              Scoring formula — max {MAX_WEIGHT_SUM} pts = 100%
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: '2px 12px', ...mono, fontSize: 10 }}>
+              {(Object.entries(TRIGGER_WEIGHTS) as [string, number][]).map(([k, w]) => {
+                const fired = triggers.find(t => t.type === k);
+                return [
+                  <span key={`k-${k}`} style={{ color: fired ? C.ink : C.neutral }}>{k.replace(/_/g, ' ')}</span>,
+                  <span key={`v-${k}`} style={{ color: fired ? C.warn : C.dim, textAlign: 'right' }}>+{w}</span>,
+                ];
+              })}
+            </div>
+            <div style={{ marginTop: 6, paddingTop: 6, borderTop: `1px solid ${C.border}`, color: C.dim, fontSize: 10, ...mono }}>
+              current score: <span style={{ color: C.ink }}>{evidenceTotal}</span> / {MAX_WEIGHT_SUM} = {conf}%
+              &nbsp;·&nbsp;emit threshold: {EMIT_THRESHOLD}%
+            </div>
+          </div>
+        )}
       </div>
 
-      {/* Evidence split — how the fired triggers' weight divides between
-          long-leaning, short-leaning and neutral reads. This is the honest
-          picture: the engine's `direction` is one resolution of this split,
-          not the only possible one. */}
+      {/* Evidence split bar */}
       {emitted && evidenceTotal > 0 && (
         <div style={{ marginBottom: 14 }}>
           <div style={{ display: 'flex', height: 6, borderRadius: 3, overflow: 'hidden', marginBottom: 4 }}>
-            {longPct > 0 && <div style={{ width: `${longPct}%`, background: C.long }} title={`long-leaning evidence: ${longWeight}`} />}
-            {neutralPct > 0 && <div style={{ width: `${neutralPct}%`, background: C.neutral }} title={`neutral evidence: ${neutralWeight}`} />}
-            {shortPct > 0 && <div style={{ width: `${shortPct}%`, background: C.short }} title={`short-leaning evidence: ${shortWeight}`} />}
+            {longPct > 0 && <div style={{ width: `${longPct}%`, background: C.long }} title={`long-leaning: ${longWeight}`} />}
+            {neutralPct > 0 && <div style={{ width: `${neutralPct}%`, background: C.neutral }} title={`neutral: ${neutralWeight}`} />}
+            {shortPct > 0 && <div style={{ width: `${shortPct}%`, background: C.short }} title={`short-leaning: ${shortWeight}`} />}
           </div>
           <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 9, color: C.dim, ...mono }}>
             <span style={{ color: longWeight > 0 ? C.long : C.dim }}>long {longWeight}</span>
@@ -173,8 +246,7 @@ export default function PlacementPanel({
         </div>
       )}
 
-      {/* Triggers fired — each chip colored by its OWN lean, not the engine's
-          resolved direction, so disagreement between signals stays visible. */}
+      {/* Trigger chips */}
       <div style={{ marginBottom: 14 }}>
         <div style={{ fontSize: 10, color: C.dim, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6 }}>Evidence breakdown</div>
         {triggers.length > 0 ? (
@@ -195,7 +267,7 @@ export default function PlacementPanel({
         )}
       </div>
 
-      {/* AI explanation (emitted signals only) */}
+      {/* AI explanation */}
       {emitted && (
         <div style={{ marginBottom: 14 }}>
           {!explain ? (
@@ -222,24 +294,102 @@ export default function PlacementPanel({
         </div>
       )}
 
-      {/* Live telemetry */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+      {/* ── Live telemetry grid ──────────────────────────────────────────────── */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 10 }}>
         <Stat label="CVD" value={fmt(st.cvd)} color={st.cvd != null ? (st.cvd >= 0 ? C.long : C.short) : C.dim} />
-        <Stat label="Book imbalance" value={st.imbalanceRatio != null ? `${st.imbalanceRatio.toFixed(2)}×` : '—'}
-              color={st.imbalanceRatio != null ? (st.imbalanceRatio >= 1 ? C.long : C.short) : C.dim} />
         <Stat label="Divergence" value={st.divergence ? st.divergence.kind : 'none'}
               color={st.divergence ? (st.divergence.kind === 'bullish' ? C.long : C.short) : C.dim} />
-        <Stat label="Regime" value={sig?.regime ?? '—'} color={C.ink} />
+        <Stat label="Regime"
+              value={st.regime ?? (sig?.regime ?? '—')}
+              color={
+                (st.regime ?? sig?.regime)?.includes('bull') ? C.long :
+                (st.regime ?? sig?.regime)?.includes('bear') ? C.short : C.ink
+              } />
+        {st.oi != null ? (
+          <Stat label="Open Interest" value={`$${fmtCompact(st.oi)}`} color={C.ink} />
+        ) : (
+          <Stat label="Funding" value={
+            sig?.triggers.find(t => t.type === 'funding_extreme')
+              ? 'extreme'
+              : '—'
+          } color={C.dim} />
+        )}
       </div>
 
-      {st.lastSweep && (
-        <div style={{ marginTop: 10, fontSize: 11, color: C.dim, ...mono }}>
-          last sweep: <span style={{ color: st.lastSweep.side === 'buy' ? C.long : C.short }}>{st.lastSweep.side}</span>
-          {' '}${fmt(st.lastSweep.notionalUsd)}
+      {/* ── Book Imbalance — value + sparkline + spike log ───────────────────── */}
+      <div style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 6, padding: '8px 10px', marginBottom: 10 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+          <div style={{ fontSize: 9, color: C.dim, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Book Imbalance</div>
+          {sessionPeak && (
+            <div style={{ ...mono, fontSize: 9, color: C.dim }}>
+              session peak: <span style={{ color: C.warn }}>{sessionPeak.ratio.toFixed(1)}×</span>
+              {' '}at {new Date(sessionPeak.ts).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })}
+            </div>
+          )}
         </div>
-      )}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+          <div style={{ ...mono, fontSize: 18, fontWeight: 700,
+            color: st.imbalanceRatio != null ? (st.imbalanceRatio >= 1 ? C.long : C.short) : C.dim }}>
+            {st.imbalanceRatio != null ? `${st.imbalanceRatio.toFixed(2)}×` : '—'}
+          </div>
+          {imbHistory.length >= 2 && (
+            <ImbalanceSparkline history={imbHistory} />
+          )}
+        </div>
+        {spikeEvents.length > 0 && (
+          <div style={{ marginTop: 6, borderTop: `1px solid ${C.border}`, paddingTop: 5 }}>
+            <div style={{ fontSize: 9, color: C.warn, marginBottom: 3, ...mono }}>
+              {spikeEvents.length} spike{spikeEvents.length > 1 ? 's' : ''} this session
+            </div>
+            {spikeEvents.slice(-3).reverse().map((h, i) => (
+              <div key={i} style={{ ...mono, fontSize: 9, color: C.dim, display: 'flex', justifyContent: 'space-between' }}>
+                <span style={{ color: C.warn }}>{h.ratio.toFixed(1)}×</span>
+                <span>{new Date(h.ts).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
 
-      <div style={{ marginTop: 12, fontSize: 10, color: C.neutral, borderTop: `1px solid ${C.border}`, paddingTop: 8 }}>
+      {/* ── Sweep log ────────────────────────────────────────────────────────── */}
+      <div style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 6, padding: '8px 10px', marginBottom: 10 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+          <div style={{ fontSize: 9, color: C.dim, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Sweeps (session)</div>
+          {sweepLog.length > 0 && (
+            <div style={{ ...mono, fontSize: 9 }}>
+              <span style={{ color: C.long }}>{buySweeps}B</span>
+              <span style={{ color: C.dim }}> / </span>
+              <span style={{ color: C.short }}>{sellSweeps}S</span>
+            </div>
+          )}
+        </div>
+        {sweepLog.length === 0 ? (
+          <div style={{ fontSize: 11, color: C.neutral }}>No sweeps detected yet</div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+            {sweepLog.slice().reverse().map((sw, i) => (
+              <div key={i} style={{ display: 'grid', gridTemplateColumns: '48px auto 1fr', gap: 6, alignItems: 'center', ...mono, fontSize: 10 }}>
+                <span style={{ color: C.dim }}>
+                  {new Date(sw.ts).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })}
+                </span>
+                <span style={{
+                  color: sw.side === 'buy' ? C.long : C.short,
+                  background: `${sw.side === 'buy' ? C.long : C.short}18`,
+                  borderRadius: 3, padding: '1px 5px', fontSize: 9,
+                }}>
+                  {sw.side === 'buy' ? '▲ BUY' : '▼ SELL'}
+                </span>
+                <span style={{ color: C.ink, textAlign: 'right' }}>
+                  ${fmtCompact(sw.notionalUsd)}
+                  {sw.absorbed && <span style={{ color: C.warn, marginLeft: 4 }}>ABS</span>}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div style={{ fontSize: 10, color: C.neutral, borderTop: `1px solid ${C.border}`, paddingTop: 8 }}>
         Not investment advice. Scored from live order flow — see /admin for engine cost.
       </div>
     </div>
