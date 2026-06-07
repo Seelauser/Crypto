@@ -61,6 +61,60 @@ if (process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY) {
 const FREE_AI_QUOTA  = 10;
 const BOT_TOKEN      = process.env.TELEGRAM_BOT_TOKEN ?? '';
 
+// ─── LLM Circuit Breaker ──────────────────────────────────────────────────────
+// After CB_MAX_FAILURES consecutive callLlm errors the breaker trips and AI
+// calls are skipped for CB_COOLDOWN_MS. This prevents hammering Anthropic when
+// the key is invalid / the account has zero credits — the behaviour seen in
+// logs from 2026-06-03 onward where every single call errored.
+// After the cooldown the breaker resets to half-open and allows one probe call.
+
+const CB_MAX_FAILURES = 5;
+const CB_COOLDOWN_MS  = 60 * 60 * 1000; // 1 hour
+
+let cbFailures  = 0;
+let cbTrippedAt = 0; // epoch ms; 0 = not tripped
+
+function cbIsOpen(): boolean {
+  if (cbTrippedAt === 0) return false;
+  if (Date.now() - cbTrippedAt >= CB_COOLDOWN_MS) {
+    // Cooldown expired — reset so the next call is a half-open probe
+    cbFailures  = 0;
+    cbTrippedAt = 0;
+    log.info('LLM circuit breaker cooldown expired — half-open probe next');
+    return false;
+  }
+  return true;
+}
+
+function cbRecordSuccess(): void {
+  if (cbFailures > 0 || cbTrippedAt !== 0) {
+    log.info({ prevFailures: cbFailures }, 'LLM circuit breaker reset after success');
+  }
+  cbFailures  = 0;
+  cbTrippedAt = 0;
+}
+
+function cbRecordFailure(): void {
+  cbFailures++;
+  if (cbFailures >= CB_MAX_FAILURES && cbTrippedAt === 0) {
+    cbTrippedAt = Date.now();
+    log.error(
+      { failures: cbFailures, cooldownMin: CB_COOLDOWN_MS / 60_000 },
+      'LLM circuit breaker TRIPPED — pausing AI calls for 1 hour. ' +
+      'Check Anthropic key validity and account credit balance.',
+    );
+  }
+}
+
+// ─── Explanation Dedup Cache ──────────────────────────────────────────────────
+// When multiple signals fire on the same instrument+triggerType within the same
+// 5-minute window (common at midnight when all setups re-evaluate together),
+// re-use the first explanation instead of making N identical LLM calls.
+// TTL is 10 minutes — longer than the 5-min bucket so the last call in a bucket
+// can still hit the cache.
+
+const DEDUP_TTL_SEC = 600; // 10 minutes
+
 // ─── Inbound Redis message shape ──────────────────────────────────────────────
 
 interface SignalTriggeredMessage {
@@ -84,16 +138,46 @@ async function generateExplanation(
   setupName: string,
   logger: Logger,
 ): Promise<{ explanation: string; model: LlmModel; costCents: number } | null> {
-  // Free tier: enforce the daily AI quota here (Redis counter + DB mirror)
-  // before spending. Premium metering happens inside callLlm via the ledger.
+
+  // ── Circuit breaker ────────────────────────────────────────────────────────
+  // Skip if too many consecutive Anthropic errors (e.g. zero credits, bad key).
+  if (cbIsOpen()) {
+    const resetAt = new Date(cbTrippedAt + CB_COOLDOWN_MS).toISOString();
+    logger.warn({ resetAt }, 'LLM circuit breaker open — skipping AI explanation');
+    return null;
+  }
+
+  // ── Dedup cache ────────────────────────────────────────────────────────────
+  // Multiple signals for the same instrument+triggerType in the same 5-minute
+  // window all get the same explanation without extra API calls.
+  const triggerKey = snapshot.triggerType ?? 'unknown';
+  const timeBucket = Math.floor(Date.now() / 300_000); // 5-min epoch bucket
+  const dedupKey   = `llm:explain:dedup:${snapshot.instrument}:${triggerKey}:${timeBucket}`;
+
+  const cachedRaw = await redisClient.get(dedupKey).catch(() => null);
+  if (cachedRaw) {
+    try {
+      const cached = JSON.parse(cachedRaw) as { explanation: string; model: LlmModel };
+      logger.info({ dedupKey }, 'LLM explanation dedup hit — reusing cached result');
+      return { explanation: cached.explanation, model: cached.model, costCents: 0 };
+    } catch {
+      // Corrupt entry — fall through to a fresh call
+    }
+  }
+
+  // ── Free tier quota ────────────────────────────────────────────────────────
+  // Enforce daily Haiku quota before spending. Premium metering happens inside
+  // callLlm via the token ledger.
+  // quotaKey is kept so we can roll back on API error.
+  let quotaKey: string | null = null;
   if (tier === 'free') {
-    const today    = todayUtc();
-    const redisKey = `ai:daily:${userId}:${today}`;
-    const used     = await redisClient.incr(redisKey);
-    if (used === 1) await redisClient.expire(redisKey, 86400);
+    const today = todayUtc();
+    quotaKey    = `ai:daily:${userId}:${today}`;
+    const used  = await redisClient.incr(quotaKey);
+    if (used === 1) await redisClient.expire(quotaKey, 86400);
 
     if (used > FREE_AI_QUOTA) {
-      await redisClient.decr(redisKey);
+      await redisClient.decr(quotaKey);
       logger.info({ userId, quota: FREE_AI_QUOTA }, 'free quota exhausted — skipping AI');
       return null;
     }
@@ -107,6 +191,7 @@ async function generateExplanation(
     });
   }
 
+  // ── LLM call ───────────────────────────────────────────────────────────────
   // Route through the shared LLM router — it resolves the model (Haiku for
   // free, Sonnet for premium-with-balance, Haiku fallback when exhausted),
   // writes the `llm_calls` audit row and debits the ledger.
@@ -125,8 +210,20 @@ async function generateExplanation(
           : buildSignalExplanationPrompt(snapshot, setupName),
       }],
     });
+
+    cbRecordSuccess();
+
+    // Populate dedup cache for this instrument+trigger window
+    await redisClient
+      .setex(dedupKey, DEDUP_TTL_SEC, JSON.stringify({ explanation: result.text, model: result.model }))
+      .catch(() => {});
+
     return { explanation: result.text, model: result.model, costCents: result.costCents };
   } catch (err) {
+    cbRecordFailure();
+    // Roll back the quota slot so the user doesn't lose a daily credit on a
+    // transient API error (zero credits, network issue, rate-limit, etc.).
+    if (quotaKey) await redisClient.decr(quotaKey).catch(() => {});
     logger.error({ err: (err as Error)?.message ?? String(err) }, 'callLlm error');
     return null;
   }

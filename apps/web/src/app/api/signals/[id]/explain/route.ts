@@ -91,21 +91,27 @@ export async function POST(
   // 4. Tier policy gate. Model selection itself happens inside callLlm; here we
   //    only enforce the per-tier access policy. Free + Starter are metered by
   //    a daily Haiku quota; only Pro draws Sonnet against the token ledger.
+  //
+  // quotaKey is hoisted so the catch block below can roll it back if the
+  // Anthropic call itself fails — we must not burn a quota slot on a transient
+  // API error (zero credits, network, rate-limit, etc.).
+  let quotaKey: string | null = null;
+
   if (tier !== 'pro') {
     // ── Free / Starter: daily quota via Redis (callLlm pins them → Haiku) ──
     const today      = todayUtc();
-    const redisKey   = `ai:daily:${userId}:${today}`;
+    quotaKey         = `ai:daily:${userId}:${today}`;
 
     // Atomic increment; set expiry only on first write (NX)
-    const used = await redis.incr(redisKey);
+    const used = await redis.incr(quotaKey);
     if (used === 1) {
       // First call today — set TTL so the key expires ~24h after midnight
-      await redis.expire(redisKey, 86400);
+      await redis.expire(quotaKey, 86400);
     }
 
     if (used > FREE_AI_QUOTA) {
       // Rollback the increment so the count stays accurate
-      await redis.decr(redisKey);
+      await redis.decr(quotaKey);
       return NextResponse.json(
         { error: 'ai_quota_exceeded', used: used - 1, limit: FREE_AI_QUOTA, resetAt: nextMidnightIso() },
         { status: 429 },
@@ -163,6 +169,12 @@ export async function POST(
     });
   } catch (err) {
     console.error('[signals/explain] callLlm error:', err);
+    // Roll back the quota slot — a transient API error (zero credits, network,
+    // rate-limit) must not count against the user's daily allowance. The DB
+    // mirror may be 1 row ahead at most; the Redis counter is the gate.
+    if (quotaKey) {
+      await redis.decr(quotaKey).catch(() => {});
+    }
     return NextResponse.json({ error: 'ai_unavailable', message: 'AI service error' }, { status: 502 });
   }
 
