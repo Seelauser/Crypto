@@ -205,7 +205,7 @@ async function generateExplanation(
       systemBlocks: [SYSTEM_PROMPT_CACHE_BLOCK],
       messages: (model) => [{
         role: 'user',
-        content: model === 'claude-haiku-4-5'
+        content: model === 'claude-haiku-4-5-20251001'
           ? buildSignalExplanationHaikuPrompt(snapshot, setupName)
           : buildSignalExplanationPrompt(snapshot, setupName),
       }],
@@ -487,8 +487,8 @@ async function main() {
   // C5 — boot-time pre-warm: writes the cache so the first real signal call
   // reads from it instead of paying the cache-write inline.
   const PREWARM_TARGETS = [
-    { model: 'claude-haiku-4-5'  as const, feature: 'signal_explanation_haiku' as const },
-    { model: 'claude-sonnet-4-6' as const, feature: 'signal_explanation'        as const },
+    { model: 'claude-haiku-4-5-20251001' as const, feature: 'signal_explanation_haiku' as const },
+    { model: 'claude-sonnet-4-6'         as const, feature: 'signal_explanation'        as const },
   ];
   prewarmCache(PREWARM_TARGETS)
     .catch(err => log.warn({ err: err?.message ?? String(err) }, 'prewarm failed (non-fatal)'));

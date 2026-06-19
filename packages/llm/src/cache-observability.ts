@@ -31,9 +31,9 @@ export const CACHE_LOG_SCHEMA_VERSION = 1;
  * Keep this in sync with platform.claude.com prompt-caching docs.
  */
 export const MODEL_MIN_CACHE_TOKENS: Record<LlmModel, number> = {
-  'claude-haiku-4-5': 4096,
+  'claude-haiku-4-5-20251001': 4096,
   'claude-sonnet-4-6':         1024,
-  'claude-opus-4-7':           4096,
+  'claude-opus-4-8':           4096,
 };
 
 /** Rough token estimate from character count (chars / 3.8). Good enough for a
@@ -66,6 +66,12 @@ export interface CacheEventInput {
   /** Force a no-call outcome when the API was never reached. */
   notCalled?:        'no_api_key' | 'call_error';
   requestId?:        string | null;
+  /**
+   * The `type` field from the API's `diagnostics.cache_miss_reason` when
+   * the cache-diagnosis-2026-04-07 beta is active. Null when no divergence
+   * was detected or the comparison was not available.
+   */
+  cacheMissReason?:  string | null;
 }
 
 interface ClassifiedEvent {
@@ -189,9 +195,10 @@ export function recordCacheEvent(input: CacheEventInput): void {
       cacheWrite: u?.cache_creation_input_tokens ?? 0,
     },
     costCents:  input.costCents ?? 0,
-    diagnosis:  c.diagnosis,
-    hint:       c.hint,
-    requestId:  input.requestId ?? null,
+    diagnosis:        c.diagnosis,
+    hint:             c.hint,
+    requestId:        input.requestId ?? null,
+    cacheMissReason:  input.cacheMissReason ?? null,
   }) + '\n';
 
   const dir = logDir();

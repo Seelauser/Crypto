@@ -36,6 +36,7 @@ const bodySchema = z.object({
 
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
+  defaultHeaders: { 'anthropic-beta': 'cache-diagnosis-2026-04-07' },
 });
 
 const redis = new Redis(process.env.REDIS_URL ?? 'redis://localhost:6379', {
@@ -94,9 +95,13 @@ async function incrementDailyCount(userId: string): Promise<void> {
 // ─── Cost helper ──────────────────────────────────────────────────────────────
 
 function computeCostCents(usage: Anthropic.Usage): number {
-  const inputCents  = (usage.input_tokens  / 1000) * PRICE_INPUT;
-  const outputCents = (usage.output_tokens / 1000) * PRICE_OUTPUT;
-  return Math.ceil(inputCents + outputCents);
+  const cacheReadCents  = (((usage as unknown as Record<string, number>)['cache_read_input_tokens']     ?? 0) / 1000) * (PRICE_INPUT * 0.1);
+  const cacheWriteCents = (((usage as unknown as Record<string, number>)['cache_creation_input_tokens'] ?? 0) / 1000) * (PRICE_INPUT * 1.25);
+  return Math.ceil(
+    (usage.input_tokens  / 1000) * PRICE_INPUT +
+    (usage.output_tokens / 1000) * PRICE_OUTPUT +
+    cacheReadCents + cacheWriteCents,
+  );
 }
 
 // ─── Deduct balance ───────────────────────────────────────────────────────────
@@ -238,8 +243,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
           model:                     MODEL,
           inputTokens:               response.usage.input_tokens,
           outputTokens:              response.usage.output_tokens,
-          cacheCreationInputTokens:  response.usage.cache_creation_input_tokens ?? 0,
-          cacheReadInputTokens:      response.usage.cache_read_input_tokens     ?? 0,
+          cacheCreationInputTokens:  (response.usage as unknown as Record<string, number>)['cache_creation_input_tokens'] ?? 0,
+          cacheReadInputTokens:      (response.usage as unknown as Record<string, number>)['cache_read_input_tokens']     ?? 0,
           costCents,
           batched: false,
         },

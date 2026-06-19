@@ -30,7 +30,10 @@ const bodySchema = z.object({
 
 // ─── Clients ──────────────────────────────────────────────────────────────────
 
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+const anthropic = new Anthropic({
+  apiKey: process.env.ANTHROPIC_API_KEY,
+  defaultHeaders: { 'anthropic-beta': 'cache-diagnosis-2026-04-07' },
+});
 
 const redis = new Redis(process.env.REDIS_URL ?? 'redis://localhost:6379', {
   lazyConnect:          true,
@@ -100,9 +103,12 @@ function pearson(xs: number[], ys: number[]): number {
 }
 
 function computeCostCents(usage: Anthropic.Usage): number {
+  const cacheReadCents  = (((usage as unknown as Record<string, number>)['cache_read_input_tokens']  ?? 0) / 1000) * (PRICE_INPUT * 0.1);
+  const cacheWriteCents = (((usage as unknown as Record<string, number>)['cache_creation_input_tokens'] ?? 0) / 1000) * (PRICE_INPUT * 1.25);
   return Math.ceil(
     (usage.input_tokens  / 1000) * PRICE_INPUT +
-    (usage.output_tokens / 1000) * PRICE_OUTPUT,
+    (usage.output_tokens / 1000) * PRICE_OUTPUT +
+    cacheReadCents + cacheWriteCents,
   );
 }
 
@@ -121,7 +127,7 @@ async function narrateDivergence(
   instrumentA: string,
   instrumentB: string,
   correlation: number,
-): Promise<{ narration: string; costCents: number }> {
+): Promise<{ narration: string; costCents: number; usage: Anthropic.Usage }> {
   const prompt =
     `You are a market analyst. In ONE sentence (max 40 words), explain what it means that ` +
     `the CVD correlation between ${instrumentA} and ${instrumentB} is ${correlation.toFixed(3)} ` +
@@ -141,7 +147,7 @@ async function narrateDivergence(
     .join('')
     .trim();
 
-  return { narration, costCents: computeCostCents(res.usage) };
+  return { narration, costCents: computeCostCents(res.usage), usage: res.usage };
 }
 
 // ─── Route Handler ────────────────────────────────────────────────────────────
@@ -210,6 +216,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       const result = await narrateDivergence(instrumentA, instrumentB, correlation);
       narration  = result.narration;
       costCents  = result.costCents;
+      const u    = result.usage;
 
       // Log + deduct
       void (async () => {
@@ -217,12 +224,12 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
           await db.llmCall.create({
             data: {
               userId,
-              feature:                  'correlation_narrator',
+              feature:                  'correlation_alert',
               model:                    MODEL,
-              inputTokens:              0,
-              outputTokens:             0,
-              cacheCreationInputTokens: 0,
-              cacheReadInputTokens:     0,
+              inputTokens:              u.input_tokens,
+              outputTokens:             u.output_tokens,
+              cacheCreationInputTokens: (u as unknown as Record<string, number>)['cache_creation_input_tokens'] ?? 0,
+              cacheReadInputTokens:     (u as unknown as Record<string, number>)['cache_read_input_tokens']     ?? 0,
               costCents,
               batched: false,
             },

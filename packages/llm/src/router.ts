@@ -29,28 +29,41 @@ export type LlmFeature =
   | 'qa_synthesis';
 
 export type LlmModel =
-  | 'claude-haiku-4-5'
+  | 'claude-haiku-4-5-20251001'
   | 'claude-sonnet-4-6'
-  | 'claude-opus-4-7';
+  | 'claude-opus-4-8';
 
 export type UserTier = 'free' | 'premium';
 
-const HAIKU: LlmModel = 'claude-haiku-4-5';
+const HAIKU: LlmModel = 'claude-haiku-4-5-20251001';
 
 // ─── Anthropic Client ─────────────────────────────────────────────────────────
 
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
+  defaultHeaders: {
+    'anthropic-beta': 'cache-diagnosis-2026-04-07',
+  },
 });
+
+// ─── Cache Diagnostics State ──────────────────────────────────────────────────
+// Tracks the last response ID per (feature, model) pair so the next call can
+// request a cache-miss comparison from the API. In-memory only — resets on
+// restart, which is fine: we care about steady-state miss reasons, not boot.
+const _lastResponseId = new Map<string, string | null>();
+
+function _diagKey(feature: LlmFeature, model: LlmModel): string {
+  return `${feature}:${model}`;
+}
 
 // ─── Feature → Model Map ──────────────────────────────────────────────────────
 
 const FEATURE_MODEL_MAP: Record<LlmFeature, LlmModel> = {
   // Haiku
-  signal_triage:            'claude-haiku-4-5',
-  signal_explanation_haiku: 'claude-haiku-4-5',
-  whale_label:              'claude-haiku-4-5',
-  qa_retrieval:             'claude-haiku-4-5',
+  signal_triage:            'claude-haiku-4-5-20251001',
+  signal_explanation_haiku: 'claude-haiku-4-5-20251001',
+  whale_label:              'claude-haiku-4-5-20251001',
+  qa_retrieval:             'claude-haiku-4-5-20251001',
 
   // Sonnet
   signal_explanation: 'claude-sonnet-4-6',
@@ -60,18 +73,18 @@ const FEATURE_MODEL_MAP: Record<LlmFeature, LlmModel> = {
   correlation_alert:  'claude-sonnet-4-6',
 
   // Opus
-  scan_synthesis: 'claude-opus-4-7',
-  daily_recap:    'claude-opus-4-7',
-  deep_analysis:  'claude-opus-4-7',
-  whale_forensic: 'claude-opus-4-7',
-  qa_synthesis:   'claude-opus-4-7',
+  scan_synthesis: 'claude-opus-4-8',
+  daily_recap:    'claude-opus-4-8',
+  deep_analysis:  'claude-opus-4-8',
+  whale_forensic: 'claude-opus-4-8',
+  qa_synthesis:   'claude-opus-4-8',
 };
 
 // ─── Tier Permissions ─────────────────────────────────────────────────────────
 
 const TIER_ALLOWED_MODELS: Record<UserTier, LlmModel[]> = {
-  free:    ['claude-haiku-4-5'],
-  premium: ['claude-haiku-4-5', 'claude-sonnet-4-6', 'claude-opus-4-7'],
+  free:    ['claude-haiku-4-5-20251001'],
+  premium: ['claude-haiku-4-5-20251001', 'claude-sonnet-4-6', 'claude-opus-4-8'],
 };
 
 // ─── Pricing (cents per 1 000 tokens) ─────────────────────────────────────────
@@ -84,7 +97,7 @@ interface ModelPricing {
 }
 
 const MODEL_PRICE_MAP: Record<LlmModel, ModelPricing> = {
-  'claude-haiku-4-5': {
+  'claude-haiku-4-5-20251001': {
     input:      0.100,
     output:     0.500,
     cacheRead:  0.010,   // $0.10/MTok — 0.1× base input
@@ -96,7 +109,7 @@ const MODEL_PRICE_MAP: Record<LlmModel, ModelPricing> = {
     cacheRead:  0.030,   // $0.30/MTok — 0.1× base input
     cacheWrite: 0.375,   // $3.75/MTok — 1.25× base input (5m TTL)
   },
-  'claude-opus-4-7': {
+  'claude-opus-4-8': {
     input:      0.500,
     output:     2.500,
     cacheRead:  0.050,   // $0.50/MTok — 0.1× base input
@@ -364,19 +377,33 @@ export async function callLlm(params: CallLlmParams): Promise<CallLlmResult> {
     throw new Error('[llm/router] ANTHROPIC_API_KEY is not set — no LLM call made');
   }
 
-  // 4. Dispatch
+  // 4. Dispatch — pass cache diagnostics to detect silent prefix invalidators.
+  const diagKey = _diagKey(feature, model);
+  const prevId  = _lastResponseId.has(diagKey) ? _lastResponseId.get(diagKey)! : null;
+
   let response: Anthropic.Message;
   try {
-    response = await anthropic.messages.create({
-      model,
-      max_tokens: maxTokens,
-      system:     systemParam,
-      messages:   resolvedMessages,
-    });
+    response = await anthropic.messages.create(
+      {
+        model,
+        max_tokens: maxTokens,
+        system:     systemParam,
+        messages:   resolvedMessages,
+        // @ts-ignore — diagnostics is a beta field (cache-diagnosis-2026-04-07)
+        diagnostics: { previous_message_id: prevId },
+      },
+    );
   } catch (err) {
     recordCacheEvent({ feature, model, tier: userTier, hadSystem, systemTokensEst, notCalled: 'call_error' });
     throw err;
   }
+
+  // Store response ID for next call; null on first turn (no prior to compare).
+  _lastResponseId.set(diagKey, (response as unknown as Record<string, unknown>)['id'] as string ?? null);
+
+  // Extract diagnostics miss reason if present.
+  const diagResult   = (response as unknown as Record<string, unknown>)['diagnostics'] as { cache_miss_reason?: { type: string } | null } | null | undefined;
+  const cacheMissReason = diagResult?.cache_miss_reason?.type ?? null;
 
   const usage: LlmUsage = {
     input_tokens:                response.usage.input_tokens,
@@ -398,7 +425,8 @@ export async function callLlm(params: CallLlmParams): Promise<CallLlmResult> {
   recordCacheEvent({
     feature, model, tier: userTier, hadSystem, systemTokensEst,
     usage, costCents,
-    requestId: (response as { _request_id?: string | null })._request_id ?? null,
+    requestId:       (response as { _request_id?: string | null })._request_id ?? null,
+    cacheMissReason,
   });
 
   if (userTier === 'premium') {

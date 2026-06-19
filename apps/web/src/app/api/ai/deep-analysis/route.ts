@@ -27,6 +27,7 @@ const bodySchema = z.object({
 
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
+  defaultHeaders: { 'anthropic-beta': 'cache-diagnosis-2026-04-07' },
 });
 
 const redis = new Redis(process.env.REDIS_URL ?? 'redis://localhost:6379', {
