@@ -15,7 +15,7 @@
 
 4. Paste into `.env`:
    ```bash
-   nano /root/projects/orderflow/.env
+   nano /srv/projects/orderflow/.env
    ```
    ```
    ALPACA_KEY_ID=…

@@ -2,7 +2,7 @@
 
 The service runs end-to-end today. Crypto data ingest is live, dashboard is real, mobile works. The items below unlock additional capability — each is grouped by what it adds, with the exact env var, where to get the credential, and what stays broken without it.
 
-Edit `/root/projects/orderflow/.env` on the server, then restart the relevant systemd unit (`systemctl restart orderflow-<unit>`).
+Edit `/srv/projects/orderflow/.env` on the server, then restart the relevant systemd unit (`systemctl restart orderflow-<unit>`).
 
 ---
 
@@ -84,7 +84,7 @@ Each asset class is currently shown as **"ingest pending"** on the dashboard (ho
 ## 5. Growth / marketing
 
 ### 5.1 Susy X campaign content (manual, no env var)
-- Two files in `/root/projects/orderflow/growth/` (added in commit `7cc2d71`):
+- Two files in `/srv/projects/orderflow/growth/` (added in commit `7cc2d71`):
   - `01_brand_profile.md` — paste into Susy X admin → Brand Profile
   - `02_campaign_briefings.md` — paste into Susy X admin → Campaign Briefings
 - **Without it:** the `/try?utm_source=...` route works but nothing pushes traffic to it.
@@ -109,7 +109,7 @@ Each asset class is currently shown as **"ingest pending"** on the dashboard (ho
 Run this to see which keys are still blank in `.env`:
 
 ```bash
-grep -E '^[A-Z_]+=' /root/projects/orderflow/.env | awk -F= '$2=="" || $2=="\"\"" {print $1}'
+grep -E '^[A-Z_]+=' /srv/projects/orderflow/.env | awk -F= '$2=="" || $2=="\"\"" {print $1}'
 ```
 
 Current state (2026-06-05):

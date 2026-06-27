@@ -1,6 +1,6 @@
 # Your TODO List — OrderFlow
 
-Each item below is a separate file in `todo/` — open the file, follow the steps, paste the values into `/root/projects/orderflow/.env`, then ping Claude with which file(s) are done so I can run the follow-up tests.
+Each item below is a separate file in `todo/` — open the file, follow the steps, paste the values into `/srv/projects/orderflow/.env`, then ping Claude with which file(s) are done so I can run the follow-up tests.
 
 ## Critical (unlock real users)
 - [ ] [01-anthropic-key.md](todo/01-anthropic-key.md) — Real AI explanations on every triggered signal
@@ -30,14 +30,14 @@ Each item below is a separate file in `todo/` — open the file, follow the step
 
 1. Open one file at a time.
 2. Each file has: **what**, **why it matters**, **where to get it**, **what to paste**, **how to verify**.
-3. Edit `/root/projects/orderflow/.env` (the live one on the server) — never commit secrets.
+3. Edit `/srv/projects/orderflow/.env` (the live one on the server) — never commit secrets.
 4. Restart the systemd unit named in the file (e.g. `systemctl restart orderflow-web`).
 5. Tick the box above and tell me "done with 01" — I'll run the smoke test for that capability.
 
 ## Audit which keys are still blank
 
 ```bash
-grep -E '^[A-Z_]+=' /root/projects/orderflow/.env | awk -F= '$2=="" || $2=="\"\"" {print $1}'
+grep -E '^[A-Z_]+=' /srv/projects/orderflow/.env | awk -F= '$2=="" || $2=="\"\"" {print $1}'
 ```
 
 ## When you're done

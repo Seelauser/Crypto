@@ -9,7 +9,7 @@
 
 1. On the server:
    ```bash
-   cd /root/projects/orderflow
+   cd /srv/projects/orderflow
    pnpm --dir apps/web exec web-push generate-vapid-keys
    ```
    Output looks like:
@@ -20,7 +20,7 @@
 
 2. Edit `.env`:
    ```bash
-   nano /root/projects/orderflow/.env
+   nano /srv/projects/orderflow/.env
    ```
    ```
    VAPID_PUBLIC_KEY=BL3JN8…
