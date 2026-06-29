@@ -14,7 +14,7 @@
 
 5. Paste into `.env`:
    ```bash
-   nano /root/projects/orderflow/.env
+   nano /srv/projects/orderflow/.env
    ```
    ```
    OANDA_ACCOUNT_ID=101-001-…

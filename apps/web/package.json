@@ -9,7 +9,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.35.0",
+    "@anthropic-ai/sdk": "^0.106.0",
     "@auth/prisma-adapter": "^2.7.0",
     "@orderflow/db": "workspace:*",
     "@orderflow/llm": "workspace:*",

@@ -20,7 +20,7 @@
 
 7. Paste into `.env`:
    ```bash
-   nano /root/projects/orderflow/.env
+   nano /srv/projects/orderflow/.env
    ```
    ```
    TELEGRAM_BOT_TOKEN=123456789:ABC-…
@@ -30,8 +30,8 @@
 
 8. Register the webhook (one-time):
    ```bash
-   TOKEN=$(grep '^TELEGRAM_BOT_TOKEN=' /root/projects/orderflow/.env | cut -d= -f2)
-   SECRET=$(grep '^TELEGRAM_WEBHOOK_SECRET=' /root/projects/orderflow/.env | cut -d= -f2)
+   TOKEN=$(grep '^TELEGRAM_BOT_TOKEN=' /srv/projects/orderflow/.env | cut -d= -f2)
+   SECRET=$(grep '^TELEGRAM_WEBHOOK_SECRET=' /srv/projects/orderflow/.env | cut -d= -f2)
    curl -X POST "https://api.telegram.org/bot$TOKEN/setWebhook" \
         -d "url=https://orderflow-beast.com/api/telegram/webhook" \
         -d "secret_token=$SECRET"

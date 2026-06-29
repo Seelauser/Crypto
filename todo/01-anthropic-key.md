@@ -11,7 +11,7 @@
 3. Copy the value (`sk-ant-…`).
 4. On the server:
    ```bash
-   nano /root/projects/orderflow/.env
+   nano /srv/projects/orderflow/.env
    ```
    Find `ANTHROPIC_API_KEY=` and paste the key after the `=`.
 

@@ -77,7 +77,7 @@ async function bootstrap() {
   // Also subscribe per-user signal events (signal:triggered:<userId>)
   // These are handled dynamically as clients subscribe
 
-  httpServer.listen(PORT, () => log.info({ port: PORT, channels: FORWARDED_CHANNELS.length }, 'ws gateway listening (+ /health)'));
+  httpServer.listen(PORT, process.env.WS_HOST ?? '127.0.0.1', () => log.info({ port: PORT, channels: FORWARDED_CHANNELS.length }, 'ws gateway listening (+ /health)'));
 }
 
 function addSubscription(ws: WebSocket, channel: string) {

@@ -24,7 +24,7 @@
 
 5. **On the server:**
    ```bash
-   nano /root/projects/orderflow/.env
+   nano /srv/projects/orderflow/.env
    ```
    Set:
    ```

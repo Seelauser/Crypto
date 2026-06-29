@@ -1,6 +1,6 @@
 # Next Session — Start From Here
 
-**Last updated:** 2026-06-06 (session 30) · **Version:** `v0.2.0`+ order-flow UI redesign Phases 1-4 + QA pass (merged to `main` + **deployed live**)
+**Last updated:** 2026-06-27 (session 33) · **Version:** `v0.2.0`+ analyst-audit fixes + LLM hardening + infra security pass
 
 This is the single document a future session should read first. It captures
 **where we are**, **what's verified working**, and **what to pick up next**
@@ -15,10 +15,10 @@ without scrolling through prior checkpoints.
 | URL | https://orderflow-beast.com |
 | Last health check | 2026-06-05 — HTTP 200 in ~512ms |
 | **Live build** | All credential-free items from the Master spec picklist are now shipped. Phase 5 chart UI complete; Phase 6 P6-1 + P6-3 + P6-4 done. |
-| **Live AI** | Phase -1 caching gate **PASSED** (Haiku 4.5 / Sonnet 4.6 / Opus 4.7 — 100% cache hit on repeat calls). C4 (per-feature cache block) + C5 (boot-time pre-warm) live. |
+| **Live AI** | Cache diagnostics beta live. Model IDs corrected (haiku-4-5-20251001, opus-4-8). 100% cache hit on repeat calls. Billing accuracy fixed (correlation route was logging 0 tokens). |
 | Live WebSocket | `WS: live` app-wide |
 | systemd units active | **17 services + 1 timer** |
-| Git | `main` @ `312f44e`, pushed to `origin/main` |
+| Git | `main` @ `f6bb42e`; PR `fix/path-corrections-security-hardening` (`e96578a`) open — merge when ready |
 | Typecheck | `pnpm typecheck` — green (7/7) |
 | Lint | `pnpm lint` — 0 errors, 80 warnings (ESLint v9 flat config) |
 | Logging | Structured pino NDJSON with correlation IDs (`cid` field) across workers + api + ws-gateway |
@@ -26,72 +26,45 @@ without scrolling through prior checkpoints.
 | Synthetic data | Stocks, futures, forex, commodities, resources — bars API GBM fallback |
 | Notifications | Wired but silent (no Resend/VAPID/Telegram keys) |
 | Billing | Wired but not flipped on (no Stripe keys) |
+| Redis | **Password-protected since 2026-06-23.** All `redis-cli` commands need `-a $REDIS_PASS` (see OPERATIONS.md). |
+| API / WS binding | Both now bind to `127.0.0.1` (via `API_HOST`/`WS_HOST` env vars) instead of `0.0.0.0`. |
+| Memory | `~/.claude/projects/-srv-projects-orderflow/memory/` initialised — 4 files (user profile, project state, working style, arch gotchas). |
 
 ---
 
-## 2. Recent shipped work (last session)
+## 2. Recent shipped work (last sessions)
 
-Session 30 — **order-flow chart UI redesign (Phases 1-4) + quality-team QA
-pass**. Acted as product owner per "work until finished" mandate; shipped all
-4 phases, then ran a full QA gate (lint/typecheck/build/7-angle code review)
-and fixed everything it found:
+Session 33 (2026-06-27) — **memory bootstrap + infra security + docs cleanup**
+
+| Action | What |
+|---|---|
+| Memory initialised | `~/.claude/projects/-srv-projects-orderflow/memory/` — 4 files (user profile, project state, working style, arch gotchas) |
+| `e96578a` (PR open) | Path corrections (`/root/` → `/srv/`) across all docs + todo files; API/WS bind to `127.0.0.1` via env vars; Redis auth documented in OPERATIONS.md; service count 12→16; growth brand assets added |
+
+Session 32 (2026-06-19) — **LLM hardening**
+
+| Commit | What |
+|---|---|
+| `f6bb42e` | Cache diagnostics beta header, corrected model IDs (`haiku-4-5-20251001`, `opus-4-8`), billing accuracy fix (correlation route was logging 0 tokens), `cacheMissReason` field |
+| `11f09a0` | Quota rollback, circuit breaker, explanation dedup cache |
+
+Session 31 (2026-06-07) — **analyst-audit gap fixes (9 of 14)**
+
+| Commit | What |
+|---|---|
+| `80de4da` | TapePanel type fix (`tick`→`market_ticks`), OB heatmap type fix, sweep history ring-buffer surfaced in PlacementPanel, imbalance sparkline + spike log, OI exposure, regime polling, scoring formula tooltip, footprint CVD row |
+
+Session 30 (2026-06-06) — **order-flow chart UI redesign (Phases 1-4) + QA pass**
 
 | Commit | What |
 |---|---|
 | `457ecb4` | Phase 1 — `PlacementPanel`: confidence gauge + evidence-split bar replacing binary LONG/SHORT badge |
 | `c410078` | Phase 2 — `FlowStatsStrip`: bar-by-bar Volume/Delta/RelStrength/CVD strip (starter+) |
 | `f2e3990` | Phase 3 — `FootprintChart` visual overhaul: absorption glow / sweep flash, continuous `imbalanceFill` ramp |
-| `653690b` | Phase 4 (scoped) — cross-pane price-level highlighting: footprint/DOM hover → order-book heatmap dashed line |
-| `312f44e` | **QA pass**: fixed 4 confirmed bugs from independent code review (see below) |
+| `653690b` | Phase 4 — cross-pane price-level highlighting: footprint/DOM hover → order-book heatmap dashed line |
+| `312f44e` | QA pass: 4 confirmed bugs fixed |
 
-**QA fixes in `312f44e`:**
-1. `FlowStatsStrip` — clear stale bars before fetching on instrument/timeframe switch
-2. `FootprintChart` — clear `hoverBar`/`hoverCell`/`onPriceHover` when cursor leaves the plotted area (price column / past last bar) — was leaving the cross-pane heatmap highlight stuck on a stale price
-3. `FootprintChart` — sweep-glow effect now keys off `lastSweep?.ts`/`?.absorbed` (stable primitives) instead of the object reference, which churned every ~1s recompute and restarted the redraw interval (stutter only — decay timing was always correct)
-4. `FootprintChart` — removed the redundant binary 3×/10× tooltip badge that could visually disagree with the new continuous `imbalanceFill` color ramp
-
-**Known dormant feature (pre-existing gap, not introduced this session):** the
-Phase 3 absorption-glow path is structurally inert — `market:absorption_detected`
-has no publisher anywhere in the Python workers (only a "future use" placeholder
-in `evaluator.py`), so `lastSweep.absorbed` is always `false`. Code degrades
-gracefully (the spike-fade flash still renders for raw sweeps); the slow
-sustained glow will activate once that detector ships. Worth a follow-up item
-when absorption-detection lands.
-
-All typecheck/build/lint clean, deployed via `pnpm web:deploy` (service
-active), pushed `653690b..312f44e` to `origin/main`.
-
----
-
-Session 29 — **v0.1.0** chart-first UX pass (UI/UX review). Merged to `main`
-(`0a50566`), tagged `v0.1.0`, **deployed live and browser-verified** on
-`/markets/crypto`. See [`CHANGELOG.md`](../CHANGELOG.md):
-
-- **Fixed the CVD line "flashing" long/short** — root cause was `cvdLineColor`
-  in `CvdChart` comparing last-vs-previous bar, which flips the whole line on
-  every live tick. Now colours by sign of net CVD over the window (stable —
-  verified holding across live ticks on prod).
-- Authenticated landing now `/markets/crypto` (chart first), not `/dashboard`.
-- Added market-bias badge, colour legend, tier-aware default layers, and a
-  collapsible symbol sidebar on the markets page.
-- Fixed legend-popover anchoring (toolbar needed `position: relative`).
-
-> ⚠️ **Prod working-tree note:** an **uncommitted ESLint-cleanup pass** (47
-> files, source-only, no runtime effect — `any`→typed casts, unused-import
-> removal, `\$`→`$` in `system.ts`) lives in the prod `main` checkout. It was
-> stashed/popped around the v0.1.0 deploy and is still uncommitted. Good
-> candidate to review + commit next session to get the tree clean.
-
-Session 28 — owner-homework-prep autonomous pass:
-
-| Commit | What |
-|---|---|
-| `abd5348` | feat(mobile): /signals /scans /settings /billing per-page mobile pass (P6-3) |
-| `6c6b28b` | chore(lint): ESLint v9 flat config migration (P6-4) |
-| `e410831` | feat(logging): pino + correlation IDs across workers + api + ws-gateway (P6-1) |
-
-Previous chain (session 26): `dfd27f4` docs · `7ce68b4` C4/C5 cache · `6ed1df4`
-P5-10 triggers · `15663e7` chart UI completion.
+**Known dormant feature:** `market:absorption_detected` has no Python publisher yet — `lastSweep.absorbed` always `false`. Degrades gracefully (raw sweep flash still renders). Will activate when absorption-detection lands.
 
 ---
 
@@ -167,6 +140,10 @@ section in `USER_TODO.md` lists the exact `systemctl restart …` to run.
 
 ## 5. Memory checkpoint pairing
 
-This document pairs with
-`~/.claude/projects/-root/memory/checkpoint_session28.md`. Either should be
-enough to resume; both is best.
+This document pairs with `~/.claude/projects/-srv-projects-orderflow/memory/`
+(initialised session 33 — 4 files). Either is enough to resume; both is best.
+
+**To authenticate `gh` for future PR creation:**
+```bash
+gh auth login
+```

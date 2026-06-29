@@ -36,7 +36,7 @@ Open https://dashboard.stripe.com/products → "Add product" — one product per
 
 ### D. Paste into .env
 ```bash
-nano /root/projects/orderflow/.env
+nano /srv/projects/orderflow/.env
 ```
 ```
 STRIPE_SECRET_KEY=sk_live_…

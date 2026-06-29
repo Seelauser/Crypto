@@ -7,7 +7,7 @@ Live deployment of `https://orderflow-beast.com` on VPS `srv860116` (147.93.57.2
 ## Quick state check
 
 ```bash
-# All OrderFlow services (should be 12 running)
+# All OrderFlow services (should be 16 running)
 systemctl list-units --type=service 'orderflow-*' --no-pager --no-legend
 
 # Public smoke (200 OK)
@@ -17,14 +17,17 @@ curl -sI https://orderflow-beast.com/ https://orderflow-beast.com/login https://
 sudo -u postgres psql -p 5433 -d orderflow -c \
   "SELECT exchange, count(*) AS n, max(ts) AS latest FROM market_ticks WHERE ts > now() - interval '60 seconds' GROUP BY 1;"
 
-# Live regime + divergences
-redis-cli HGETALL market:regime
-redis-cli LLEN market:divergences
+# Live regime + divergences (Redis is now password-protected — use -a flag or REDIS_URL from .env)
+REDIS_PASS=$(grep REDIS_URL /srv/projects/orderflow/.env | sed 's|.*://:\([^@]*\)@.*|\1|')
+redis-cli -a "$REDIS_PASS" HGETALL market:regime
+redis-cli -a "$REDIS_PASS" LLEN market:divergences
 ```
 
-## The 12 systemd services
+## The 16 systemd services
 
-All units live under `/etc/systemd/system/orderflow-*.service`. Configured with `EnvironmentFile=/root/projects/orderflow/.env`, `Restart=always`, `RestartSec=15`, journaled.
+All units live under `/etc/systemd/system/orderflow-*.service`. Configured with `EnvironmentFile=/srv/projects/orderflow/.env`, `Restart=always`, `RestartSec=15`, journaled.
+
+**Port binding (2026-06-23):** `orderflow-api` binds to `127.0.0.1:4000` and `orderflow-ws` binds to `127.0.0.1:4001` — not 0.0.0.0. This is set via `API_HOST`/`WS_HOST` env vars read by `dist/server.js` and `dist/index.js`.
 
 | Unit | Purpose | Port | Dependencies |
 |---|---|---|---|
@@ -58,7 +61,7 @@ hold stale table OIDs. **Restart in this order:**
 
 ```bash
 # 1. (Idempotent) re-apply hypertables — auto-done by db:migrate now
-cd /root/projects/orderflow && pnpm --filter @orderflow/db db:timescale
+cd /srv/projects/orderflow && pnpm --filter @orderflow/db db:timescale
 
 # 2. Restart workers that hold DB connections
 systemctl restart orderflow-persistence \
@@ -74,7 +77,7 @@ systemctl restart orderflow-web
 After any web code change:
 
 ```bash
-cd /root/projects/orderflow
+cd /srv/projects/orderflow
 pnpm web:deploy        # build + stage public/static + restart orderflow-web
 # OR
 pnpm web:build         # build + stage only (don't touch the running unit)
@@ -100,15 +103,22 @@ Hypertables: `market_ticks`, `ohlcv_bars`, `order_book_snapshots`. SQL definitio
 
 ## Redis
 
-Single instance at `127.0.0.1:6379`. Channels + keys are documented in `CLAUDE.md` ("Redis channels (live in prod)").
+Single instance at `127.0.0.1:6379`. **Password-protected since 2026-06-23.** Password stored in `REDIS_URL` in `/srv/projects/orderflow/.env` (format: `redis://:PASSWORD@127.0.0.1:6379`).
+
+Channels + keys are documented in `CLAUDE.md` ("Redis channels (live in prod)").
 
 Common debug:
 ```bash
-redis-cli pubsub channels 'market:*'   # list active channels
-redis-cli psubscribe 'market:cvd_update' | head -5
-redis-cli HGETALL market:regime
-redis-cli LRANGE market:divergences 0 5
+# Extract password from .env for CLI use
+REDIS_PASS=$(grep REDIS_URL /srv/projects/orderflow/.env | sed 's|.*://:\([^@]*\)@.*|\1|')
+
+redis-cli -a "$REDIS_PASS" pubsub channels 'market:*'
+redis-cli -a "$REDIS_PASS" psubscribe 'market:cvd_update'
+redis-cli -a "$REDIS_PASS" HGETALL market:regime
+redis-cli -a "$REDIS_PASS" LRANGE market:divergences 0 5
 ```
+
+> **Note:** If Redis auth fails, all 16 services will fail to connect. Check `requirepass` in `/etc/redis/redis.conf` matches the password in `.env`.
 
 ## nginx
 

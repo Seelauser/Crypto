@@ -11,13 +11,13 @@
 
 2. **Brand profile:**
    - Susy X admin → Brand Profile (or equivalent).
-   - Open `/root/projects/orderflow/growth/01_brand_profile.md` on the server (or via your editor).
+   - Open `/srv/projects/orderflow/growth/01_brand_profile.md` on the server (or via your editor).
    - Copy the entire contents.
    - Paste into the Brand Profile field. Save.
 
 3. **Campaign briefings:**
    - Susy X admin → Campaign Briefings.
-   - Open `/root/projects/orderflow/growth/02_campaign_briefings.md`.
+   - Open `/srv/projects/orderflow/growth/02_campaign_briefings.md`.
    - Copy contents.
    - Paste. Save.
 

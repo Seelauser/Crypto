@@ -32,7 +32,7 @@ app.register(notificationsRouter, { prefix: '/notifications' });
 
 const PORT = parseInt(process.env.API_PORT ?? '4000');
 
-app.listen({ port: PORT, host: '0.0.0.0' }, (err) => {
+app.listen({ port: PORT, host: process.env.API_HOST ?? '127.0.0.1' }, (err) => {
   if (err) { app.log.error(err); process.exit(1); }
   app.log.info({ port: PORT }, 'api server running');
 });

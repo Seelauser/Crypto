@@ -1,8 +1,8 @@
 # OrderFlow Beast — Growth playbook (powered by Susy X)
 
 Subscription-acquisition plan: use **Susy X**
-(`/root/projects/susy-x/`) as the autonomous social operator pushing
-**OrderFlow Beast** (`/root/projects/orderflow/`) on X + Instagram +
+(`/srv/projects/susy-x/`) as the autonomous social operator pushing
+**OrderFlow Beast** (`/srv/projects/orderflow/`) on X + Instagram +
 Telegram, with manual LinkedIn support.
 
 ## Files in this folder

@@ -9,11 +9,11 @@ a broken cache and fix it.
 ## Where the logs live
 
 Directory: `$LLM_CACHE_LOG_DIR` (set it in the systemd EnvironmentFile
-`/root/projects/orderflow/.env`). If unset, defaults to
+`/srv/projects/orderflow/.env`). If unset, defaults to
 `<os-tmpdir>/orderflow-llm-cache` — fine for dev, **set it explicitly in prod**:
 
 ```
-LLM_CACHE_LOG_DIR=/root/projects/orderflow/logs/llm-cache
+LLM_CACHE_LOG_DIR=/srv/projects/orderflow/logs/llm-cache
 ```
 
 | File | Contents | Use |
@@ -51,7 +51,7 @@ Disable logging entirely with `LLM_CACHE_LOG_DISABLED=1`.
 |---|---|---|---|
 | `hit` | info | `cacheRead > 0` — caching is working. | none |
 | `write_cold` | info | Wrote cache, no read yet (first call of a 5-min window). Healthy. | none |
-| `no_api_key` | error | `ANTHROPIC_API_KEY` is unset — **no call was made at all.** The single most common cause of a blank cache dashboard. | Put a real key in `/root/projects/orderflow/.env`, then `systemctl restart orderflow-notification-dispatcher orderflow-api orderflow-web`. |
+| `no_api_key` | error | `ANTHROPIC_API_KEY` is unset — **no call was made at all.** The single most common cause of a blank cache dashboard. | Put a real key in `/srv/projects/orderflow/.env`, then `systemctl restart orderflow-notification-dispatcher orderflow-api orderflow-web`. |
 | `miss_below_min` | warn | The cached system prefix is shorter than `minRequired`; `cache_control` is silently ignored. | Extend `SYSTEM_PROMPT` in `packages/llm-prompts/src/system.ts` to clear the largest `minRequired` in use (4096), then `pnpm verify:cache`. |
 | `disabled_no_system` | warn | The call sent no system blocks, so there's nothing to cache. | Pass `systemBlocks: [SYSTEM_PROMPT_CACHE_BLOCK]` for that feature's call site. |
 | `miss_unexpected` | warn | Prefix is big enough but neither read nor write happened — a silent invalidator is mutating the prefix between calls. | Diff two consecutive rendered prefixes; remove per-request content from the cached region (timestamps, UUIDs, unsorted JSON, varying tool set). |
